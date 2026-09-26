@@ -242,19 +242,46 @@ export interface Band {
 /** Methodology → 1. Composite scores: the `S_arith − S_geom` gap table. */
 export type CompensationBandId = 'balanced' | 'moderate' | 'severe';
 
+export interface BandBound {
+  readonly value: number;
+  readonly inclusive: boolean;
+}
+
+/**
+ * Bounds are explicit because the doc's table is closed on both ends of "5-15":
+ * balanced [0, 5), moderate [5, 15], severe (15, ∞). The gap is clamped at 0 by the
+ * engine — a negative S_arith − S_geom is an artifact of the per-dimension floor of 1.
+ */
 export interface CompensationBand {
   readonly id: CompensationBandId;
   /** The doc's "Gap" column. */
   readonly gapText: string;
   /** The doc's "Interpretation shown" column. */
   readonly interpretation: string;
-  readonly matchFrom: number;
-  readonly matchUntil: number;
+  /** `null` means unbounded. */
+  readonly lower: BandBound | null;
+  readonly upper: BandBound | null;
 }
 
 /* ------------------------------------------------------------------ *
- * Problem statement (intent inputs — these never enter the scoring function)
+ * Inputs — three categories, not two (spec ruling 2)
+ *
+ *   Profile inputs (industry, size)  shape scoring, contribute no points
+ *   Rubric inputs (24 answers)       the only things scored
+ *   Intent inputs (problem stmt)     never touch scoring, only the prompt
  * ------------------------------------------------------------------ */
+
+/**
+ * Everything `computeReadiness` needs, and nothing it must not see.
+ * The intake form produces this object directly — zero transformation.
+ * Industry and size are parameters that select how scored inputs combine;
+ * no answer about them earns points.
+ */
+export interface ReadinessInput {
+  readonly rubricAnswers: RubricAnswers;
+  readonly industry: IndustryId;
+  readonly sizeBand: SizeBand;
+}
 
 export type PrimaryBottleneck =
   | 'manual-data-entry-document-handling'
@@ -276,13 +303,12 @@ export type TargetFunction =
 export type TimeHorizon = 'pilot-lt-3-months' | '3-6-months' | '6-12-months' | 'exploring';
 
 /**
- * Methodology → Problem Statement Intake.
+ * Intent inputs only. Never passed to the scoring engine; consumed by the prompt
+ * builder alongside `ScoringOutput`, which already carries industry and sizeBand.
  * `elaboration` is capped at 200 characters; both it and `timeHorizon` are optional
  * per Technical Requirements → Stage 3.
  */
 export interface ProblemStatement {
-  readonly industry: IndustryId;
-  readonly companySize: SizeBand;
   readonly primaryBottleneck: PrimaryBottleneck;
   readonly targetFunction: TargetFunction;
   readonly elaboration?: string;
@@ -315,10 +341,19 @@ export interface DispersionResult {
   readonly unbalanced: boolean;
 }
 
+/**
+ * Largest weighted shortfall — where the company is losing the most points right now.
+ * `argmax w_i × (100 − d_i) / 100`, ties broken by descending weight, then D-order.
+ *
+ * Descriptive, not prescriptive. Marginal sensitivity owns "fix this first". The two
+ * can disagree by design: shortfall is an arithmetic-frame quantity (points lost from
+ * S_arith), while sensitivity is a counterfactual on the geometric headline, where the
+ * marginal return on a dimension scales with w_i / d_i rather than the absolute gap.
+ */
 export interface BottleneckResult {
   readonly dimensionId: DimensionId;
-  /** `d_i × w_i / 100` for the argmin dimension. */
-  readonly weightedScore: number;
+  /** `w_i × (100 − d_i) / 100` for the selected dimension. */
+  readonly weightedShortfall: number;
 }
 
 export interface SensitivityEntry {
@@ -411,6 +446,16 @@ export interface ModelUseCase {
   readonly governanceFlags: readonly GovernanceFlag[];
   readonly dependsOnDimension: DimensionId;
   readonly isBackOfficeAlternative: boolean;
+}
+
+/**
+ * A pre-written back-office alternative (spec ruling 5). Injected client-side on top
+ * of the model's own use cases, so the tradeoff statement is authored content on the
+ * fixture rather than something the model generates.
+ */
+export interface BackOfficeFixture extends ModelUseCase {
+  /** Why this over the requested sales/marketing or customer-facing area. */
+  readonly tradeoff: string;
 }
 
 export interface RoadmapPilot {

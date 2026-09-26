@@ -117,10 +117,17 @@ describe('bands', () => {
     expect(bands.at(-1)?.matchUntil).toBe(Number.POSITIVE_INFINITY);
   });
 
-  it('compensation bands are contiguous', () => {
+  it('compensation bands tile [0, ∞) exactly: balanced [0,5), moderate [5,15], severe (15,∞)', () => {
+    expect(compensationBands[0]?.lower).toEqual({ value: 0, inclusive: true });
+    expect(compensationBands.at(-1)?.upper).toBeNull();
     for (let i = 1; i < compensationBands.length; i += 1) {
-      expect(compensationBands[i]?.matchFrom).toBe(compensationBands[i - 1]?.matchUntil);
+      const prev = compensationBands[i - 1]?.upper;
+      const next = compensationBands[i]?.lower;
+      expect(prev?.value).toBe(next?.value);
+      // Each boundary point belongs to exactly one band.
+      expect(prev?.inclusive).not.toBe(next?.inclusive);
     }
+    expect(compensationBands.find((b) => b.id === 'moderate')?.upper).toEqual({ value: 15, inclusive: true });
   });
 });
 
@@ -130,6 +137,7 @@ describe('back-office fixtures', () => {
     for (const fixture of Object.values(backOfficeExamples)) {
       expect(fixture.isBackOfficeAlternative).toBe(true);
       expect(fixture.categories.length).toBeGreaterThan(0);
+      expect(fixture.tradeoff.length).toBeGreaterThan(0);
     }
   });
 });

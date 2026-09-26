@@ -243,7 +243,7 @@ export const consistencyChecks = [
   },
   {
     id: 'C4',
-    conditionText: 'Every dimension ≥ 80',
+    conditionText: 'Every dimension ≥ 80, or band is Mature',
     description:
       'Uniformly high self-assessment; the pattern the calibration data says is rare',
   },

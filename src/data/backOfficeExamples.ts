@@ -22,7 +22,7 @@
  * active gate at Stage 5 — see the note at the foot of this file.
  */
 
-import type { IndustryId, ModelUseCase } from './types';
+import type { BackOfficeFixture, IndustryId } from './types';
 
 export const backOfficeExamples = {
   'tech-saas': {
@@ -47,6 +47,8 @@ export const backOfficeExamples = {
     ],
     dependsOnDimension: 'D2',
     isBackOfficeAlternative: true,
+    tradeoff:
+      'Less visible than a customer-facing assistant, but it runs on documentation you already own and pays back in engineer hours; the customer-facing version can follow once answers prove reliable internally.',
   },
   healthcare: {
     title: 'Prior-authorization packet assembly',
@@ -74,6 +76,8 @@ export const backOfficeExamples = {
     ],
     dependsOnDimension: 'D4',
     isBackOfficeAlternative: true,
+    tradeoff:
+      "Won't move a patient-experience metric, and still carries the full PHI control burden, but it targets a measurable administrative cost with a person reviewing every packet before it leaves.",
   },
   financial: {
     title: 'Vendor contract and invoice review',
@@ -97,6 +101,8 @@ export const backOfficeExamples = {
     ],
     dependsOnDimension: 'D1',
     isBackOfficeAlternative: true,
+    tradeoff:
+      'Invisible to customers and slower to headline than a marketing pilot, but it recovers money directly, stays outside customer-facing model-risk review, and its errors are caught internally.',
   },
   'retail-ecommerce': {
     title: 'Supplier invoice and returns documentation triage',
@@ -120,6 +126,8 @@ export const backOfficeExamples = {
     ],
     dependsOnDimension: 'D1',
     isBackOfficeAlternative: true,
+    tradeoff:
+      'Less exciting than personalization, but it needs neither a unified customer view nor consumer-data policy, and it removes manual rekeying that is easy to measure before and after.',
   },
   'manufacturing-logistics': {
     title: 'Procurement document and purchase order reconciliation',
@@ -143,20 +151,21 @@ export const backOfficeExamples = {
     ],
     dependsOnDimension: 'D1',
     isBackOfficeAlternative: true,
+    tradeoff:
+      'A quieter story than a customer-facing tool, but savings show up in payment holds and buyer hours, and a failure falls back to the manual process that already exists.',
   },
-} as const satisfies Record<IndustryId, ModelUseCase>;
+} as const satisfies Record<IndustryId, BackOfficeFixture>;
 
 /**
- * Note for Stage 5.
+ * Stage 5 contract for these fixtures (tech doc rev 12, spec ruling 5):
  *
- * Every fixture carries `retrieval-over-internal-content`, which is honest — each
- * one reads existing internal documents — but it also means G-U1 blocks all five
- * when Q2.3 = 0 (permissions never audited), and G-H1 blocks the healthcare
- * fixture when Q4.1 ≤ 1. That is correct gate behavior, not a bug in the fixtures,
- * but it collides with the Technical Requirements' stated reason for pre-writing
- * them: "keeps the nudge present and consistent on every run". Stage 5 has to
- * decide what the nudge does when the injected fixture is itself gated — most
- * likely surface it in `blockedAcknowledged` with its unblock condition, which
- * preserves the nudge's point (here is the higher-ROI alternative, and here is
- * what stands between you and it) rather than silently dropping it.
+ * - Injected client-side when the back-office nudge is active, on top of the model's
+ *   own use cases. The model is asked for 2-3 use cases in that case so the displayed
+ *   total stays within 2-4. The fixture is included in the prompt so the model can
+ *   reference it and does not duplicate it.
+ * - Every fixture carries `retrieval-over-internal-content`, which is honest — each
+ *   reads existing internal documents — so G-U1 blocks all five when Q2.3 = 0, and
+ *   G-H1 blocks the healthcare one when Q4.1 <= 1. A gated fixture is surfaced in
+ *   `blockedAcknowledged` with its title, description, gateId and unblock condition,
+ *   never dropped silently: the nudge's job is to make the option visible.
  */

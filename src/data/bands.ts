@@ -81,25 +81,28 @@ export const compensationBands = [
     id: 'balanced',
     gapText: '< 5',
     interpretation: 'Balanced readiness; the composite is a fair summary',
-    matchFrom: 0,
-    matchUntil: 5,
+    lower: { value: 0, inclusive: true },
+    upper: { value: 5, inclusive: false },
   },
   {
     id: 'moderate',
     gapText: '5-15',
     interpretation: 'Moderate imbalance; weak dimensions are being masked',
-    matchFrom: 5,
-    matchUntil: 15,
+    lower: { value: 5, inclusive: true },
+    upper: { value: 15, inclusive: true },
   },
   {
     id: 'severe',
     gapText: '> 15',
     interpretation:
       'Severe imbalance; the average materially overstates practical readiness',
-    matchFrom: 15,
-    matchUntil: Number.POSITIVE_INFINITY,
+    lower: { value: 15, inclusive: false },
+    upper: null,
   },
 ] as const satisfies readonly CompensationBand[];
+
+/** The compensation gap is clamped at this floor before banding (spec ruling, gap bands). */
+export const COMPENSATION_GAP_FLOOR = 0;
 
 /** `imbalanceNote` is present in the model response only when the gap exceeds this. */
 export const IMBALANCE_NOTE_THRESHOLD = 5;
