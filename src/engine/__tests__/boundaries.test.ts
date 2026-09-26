@@ -34,3 +34,25 @@ describe('engine boundaries', () => {
     }
   });
 });
+
+const allSources = import.meta.glob<string>(['../../**/*.{ts,tsx}', '!../../**/__tests__/**'], { query: '?raw', import: 'default', eager: true });
+
+describe('BYOK key hygiene (whole app)', () => {
+  it('scanned the app sources', () => {
+    expect(Object.keys(allSources).length).toBeGreaterThan(30);
+  });
+  it('never touches browser storage or cookies anywhere', () => {
+    for (const [path, src] of Object.entries(allSources)) {
+      expect(src, path).not.toMatch(/localStorage|sessionStorage|indexedDB|document\.cookie/);
+    }
+  });
+  it('never logs from app code (a logged request could carry the key)', () => {
+    for (const [path, src] of Object.entries(allSources)) {
+      expect(src, path).not.toMatch(/console\.(log|info|debug|warn|error)/);
+    }
+  });
+  it('only src/model/client.ts talks to the network', () => {
+    const callers = Object.entries(allSources).filter(([, src]) => /\bfetch\(|XMLHttpRequest|sendBeacon/.test(src)).map(([p]) => p);
+    expect(callers).toEqual(['../../model/client.ts']);
+  });
+});

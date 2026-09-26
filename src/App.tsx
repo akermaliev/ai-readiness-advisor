@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import type { ProblemStatement, ReadinessInput } from './data/types';
 import { computeReadiness } from './engine';
 import { IntakeWizard } from './intake/IntakeWizard';
+import { Recommendations } from './model/Recommendations';
 import { Report } from './report/Report';
 import { Button } from './ui/primitives';
 
@@ -31,7 +32,9 @@ export function App() {
       {session === null || output === null ? (
         <IntakeWizard onSubmit={(readiness, problem) => { setSession({ readiness, problem }); window.scrollTo({ top: 0 }); }} />
       ) : (
-        <Report output={output} />
+        <Report output={output}>
+          <Recommendations output={output} problem={session.problem} />
+        </Report>
       )}
     </div>
   );
