@@ -1,0 +1,13 @@
+{
+  // Compiler-enforced boundary for the deterministic core (Stage 1 data + Stage 2 engine).
+  // No DOM lib and no ambient types: fetch, window, localStorage, document are type
+  // errors here. "Zero imports from React, fetch, or any browser API" is checked by
+  // the compiler on every `npm run typecheck`, not by review.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "types": []
+  },
+  "include": ["src/data", "src/engine"],
+  "exclude": ["src/**/__tests__/**", "src/**/*.test.ts"]
+}
