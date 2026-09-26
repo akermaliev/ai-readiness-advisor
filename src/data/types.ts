@@ -374,7 +374,11 @@ export interface BandResult {
   readonly upper: number;
 }
 
-export type GateStatus = 'passed' | 'warned' | 'blocked';
+/**
+ * `warned-severe` keeps the methodology's "Warn, severe" distinct in the output object,
+ * which is also the model's input — the doc names `status` but not its values.
+ */
+export type GateStatus = 'passed' | 'warned' | 'warned-severe' | 'blocked';
 
 export interface GateResult {
   readonly id: GateId;
