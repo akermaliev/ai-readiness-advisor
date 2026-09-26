@@ -1,0 +1,64 @@
+@import "tailwindcss";
+
+/* Role tokens. Values from the dataviz reference palette; dark mode is its own stepped set. */
+:root {
+  color-scheme: light;
+  --surface: #f4f4f1;
+  --panel: #fcfcfb;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --ink-3: #7a7973;
+  --line: #e2e1dc;
+  --accent: #2a78d6;
+  --accent-strong: #1c5cab;
+  --accent-soft: #eef5fd;
+  --accent-track: #cde2fb;
+  --intent: #fbf4ea;
+  --intent-line: #eed9bb;
+  --good: #0ca30c;
+  --warning: #fab219;
+  --serious: #ec835a;
+  --critical: #d03b3b;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --surface: #121211;
+    --panel: #1a1a19;
+    --ink: #ffffff;
+    --ink-2: #c3c2b7;
+    --ink-3: #8e8d85;
+    --line: #34332f;
+    --accent: #3987e5;
+    --accent-strong: #5598e7;
+    --accent-soft: #16263a;
+    --accent-track: #184f95;
+    --intent: #221c14;
+    --intent-line: #4a3a22;
+  }
+}
+
+@theme inline {
+  --color-surface: var(--surface);
+  --color-panel: var(--panel);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-track: var(--accent-track);
+  --color-intent: var(--intent);
+  --color-intent-line: var(--intent-line);
+  --color-good: var(--good);
+  --color-warning: var(--warning);
+  --color-serious: var(--serious);
+  --color-critical: var(--critical);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+body {
+  background: var(--surface);
+  color: var(--ink);
+}
