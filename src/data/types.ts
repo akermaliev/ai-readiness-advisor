@@ -1,7 +1,7 @@
 /**
  * Stage 1 — Data Layer & Types
  *
- * Source of truth: "AI Readiness Advisor — Scoring Methodology Specification" (rev 13).
+ * Source of truth: "AI Readiness Advisor — Scoring Methodology Specification" (rev 15).
  * This file is a transcription of that document's type shapes. It contains no logic,
  * no UI, no network calls and no `any`.
  *
@@ -362,6 +362,8 @@ export interface ConfidenceFlag {
  */
 export interface ScoringOutput {
   readonly industry: IndustryId;
+  /** The size band the weights were resolved with — the output must explain its own weights. */
+  readonly sizeBand: SizeBand;
   /** The resolved weights actually applied (base profile + size modifier). */
   readonly profileWeights: ResolvedWeights;
   readonly dimensions: readonly DimensionScore[];
@@ -430,6 +432,9 @@ export interface Roadmap {
 }
 
 export interface BlockedAcknowledgement {
+  readonly title: string;
+  /** ≤ 40 words. */
+  readonly description: string;
   readonly useCaseCategory: UseCaseCategory;
   readonly gateId: GateId;
   readonly unblockCondition: string;
