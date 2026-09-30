@@ -1,24 +1,29 @@
 /**
  * Prompt builder — Methodology → Model Output Contract.
  *
- * Spec ruling 4: the model receives the ScoringOutput, the problem statement, and the
- * constraints needed to honor them — the active gates (with effect text), the category
- * vocabulary, the six dimensions' names (Fix 1), the fix-first dimension (Fix 1), and the
- * back-office fixture when the nudge is active — and nothing else about the company.
- * Gates are verified again in code after it responds (gateVerification.ts).
+ * What the model receives (spec ruling 4, as amended 2026-09-30 for v1.2 A4): the
+ * ScoringOutput; the selected option label for every rubric question, grouped by dimension,
+ * plus the unscored impact-assessment answer; the problem statement; and the constraints
+ * needed to honor them — active gates with effect text, the category vocabulary with
+ * definitions, the six dimensions' names, the fix-first dimension, and the back-office
+ * fixture when the nudge is active. The answers are readiness inputs, not intent, and the
+ * score is still computed only in code. Gates are verified again in code after it responds.
  */
 import { backOfficeExamples } from '../data/backOfficeExamples';
 import { SENSITIVITY_TARGET } from '../data/bands';
 import { gates } from '../data/gates';
 import { BACK_OFFICE_NUDGE_FUNCTIONS } from '../data/problemStatementOptions';
-import { dimensions } from '../data/questionBank';
-import type { BackOfficeFixture, DimensionId, ProblemStatement, ScoringOutput } from '../data/types';
-import { useCaseCategoryLabels } from '../data/useCaseCategories';
+import { dimensions, impactAssessmentQuestion, questionsByDimension } from '../data/questionBank';
+import type { BackOfficeFixture, DimensionId, ProblemStatement, ReadinessInput, ScoringOutput } from '../data/types';
+import { useCaseCategoryDefinitions, useCaseCategoryLabels } from '../data/useCaseCategories';
 import { dimensionLabel } from '../report/lookups';
 import { fixFirstDimension } from './summary';
 import { USE_CASE_CATEGORIES } from './vocabulary';
 
 export interface UseCaseRange { readonly min: number; readonly max: number }
+
+/** The company's own answers (A4): readiness inputs the model may cite, never re-score. */
+export type SelectedAnswers = Pick<ReadinessInput, 'rubricAnswers' | 'impactAssessment'>;
 
 /** Everything the validator needs to check a reply against this prompt. */
 export interface ReplyContract {
@@ -78,19 +83,37 @@ function dimensionBlock(): string {
   return dimensions.map((d) => `- ${d.id} ${d.name}: ${d.measures}.`).join('\n');
 }
 
+/**
+ * A4: each question's selected option label, grouped by dimension. Answers below the top
+ * option are marked, so the model can cite real gaps and never present a top answer as one.
+ */
+export function answersBlock(answers: SelectedAnswers): string {
+  const dims = dimensions.map((d) => {
+    const lines = questionsByDimension[d.id].map((q) => {
+      const selected = q.options.find((o) => o.points === answers.rubricAnswers[q.id]);
+      const top = q.options[q.options.length - 1];
+      const mark = selected === top ? 'top option' : `below the top option ("${top?.label ?? ''}")`;
+      return `  - Q${q.id} ${q.prompt} Selected: "${selected?.label ?? 'unanswered'}" (${mark})`;
+    });
+    return `${d.id} ${d.name}:\n${lines.join('\n')}`;
+  });
+  const ia = impactAssessmentQuestion.options.find((o) => o.value === answers.impactAssessment)?.label ?? answers.impactAssessment;
+  return `${dims.join('\n')}\nNot scored: ${impactAssessmentQuestion.prompt} Selected: "${ia}"`;
+}
+
 function fixFirstRule(fixFirst: DimensionId | null): string {
   if (fixFirst === null) {
     return `No dimension is below adequate (${SENSITIVITY_TARGET}/100), so there is no dimension to fix first. Set "roadmap.prerequisite" to null.`;
   }
   const label = dimensionLabel(fixFirst);
   return `The dimension to fix first is ${label}: it is the top entry in the assessment's "sensitivity" ranking, the weakest link whose improvement would lift the headline most.
-- "roadmap.prerequisite" must name it, written as "${label}", and say what closing that gap involves.
-- "roadmap.pilotFirst" must be a use case whose "dependsOnDimension" is NOT ${fixFirst}, so the pilot can start before that gap is closed.
-- Defer use cases that depend on ${fixFirst} until it is improved.
-- Set every "dependsOnDimension" honestly. Never change it to satisfy this rule: if no suitable pilot avoids ${fixFirst}, choose the best one anyway; code will flag the dependency, which is acceptable.`;
+- "roadmap.prerequisite" must name it, written as "${label}", and say what closing that gap involves. Cite the company's own answers in ${fixFirst} that are below the top option; never present an answer marked "top option" as a gap.
+- Prefer a pilot whose "dependsOnDimension" is not ${fixFirst}, so it can start before that gap is closed. If every viable AI use case depends on ${fixFirst}, the pilot may too; code will flag the dependency, which is acceptable. Never offer a non-AI project as the pilot to satisfy this rule.
+- Defer use cases that depend on ${fixFirst} until it is improved, unless one of them is the pilot.
+- Set every "dependsOnDimension" honestly. Never change it to satisfy this rule.`;
 }
 
-export function buildRecommendationPrompt(output: ScoringOutput, problem: ProblemStatement): RecommendationPrompt {
+export function buildRecommendationPrompt(output: ScoringOutput, problem: ProblemStatement, answers: SelectedAnswers): RecommendationPrompt {
   const nudge = isNudgeActive(problem);
   const range = useCaseRange(nudge);
   const fixture = nudge ? backOfficeExamples[output.industry] : null;
@@ -100,7 +123,10 @@ export function buildRecommendationPrompt(output: ScoringOutput, problem: Proble
   const warned = output.gates.filter((g) => g.status === 'warned' || g.status === 'warned-severe');
   const effect = (id: string) => gates.find((g) => g.id === id)?.effectText ?? '';
 
-  const vocabulary = USE_CASE_CATEGORIES.map((c) => `- ${c}: ${useCaseCategoryLabels[c]}`).join('\n');
+  const vocabulary = USE_CASE_CATEGORIES.map((c) => {
+    const d = useCaseCategoryDefinitions[c];
+    return `- ${c} (${useCaseCategoryLabels[c]}): ${d.counts}. Does not count: ${d.doesNotCount}.`;
+  }).join('\n');
   const exclusions = blocked.length === 0
     ? 'None. No category is excluded for this company.'
     : blocked.map((g) => `- ${g.id} excludes ${g.affectedCategories === 'all' ? 'ALL use cases' : g.affectedCategories.join(', ')}. Unblocks when: ${g.unblockCondition}`).join('\n');
@@ -126,9 +152,12 @@ The readiness assessment was computed deterministically in code before you were 
 4. Do not recommend any use case in an excluded category (listed below). For categories that are excluded but relevant to what the company asked for, add a "blockedAcknowledged" entry naming the use case that would have fit, its category, the gate, and what would unblock it.
 5. Respect every warning below; they narrow what you may recommend.
 6. Never issue a verdict on whether the company should adopt AI. No go/no-go language, no "you are ready for AI".
-7. Tag every use case with every category from the vocabulary that applies to it. Use an empty list only if none of them applies. Tagging is checked in code; an untagged excluded use case is still a violation.
-8. Return between ${range.min} and ${range.max} use cases.
-9. Reply with exactly one JSON object matching the schema. No prose, no markdown, no code fences.
+7. Tag every use case with every category from the vocabulary that plausibly applies to it, using the definitions below. Use an empty list only if none of them applies. Tagging is checked in code; an untagged excluded use case is still a violation.
+8. Every use case must be an AI-assisted workflow: a model does part of the work (drafting, classifying, extracting, summarizing, forecasting, answering, matching). Data, integration and process remediation (building a pipeline, cleaning or consolidating data, documenting a process, setting up a review procedure) is never a use case; it belongs in "roadmap.prerequisite".
+9. Sequencing: a use case that needs another use case to exist (for example, reviewing AI-generated forecasts needs the forecasts) must be deferred whenever that use case is deferred, and cannot be the pilot unless what it needs is the pilot.
+10. Ground every claim about the company in the selected answers and the assessment. Never describe as a gap something the company answered at the top option.
+11. Return between ${range.min} and ${range.max} use cases.
+12. Reply with exactly one JSON object matching the schema. No prose, no markdown, no code fences.
 
 How to read the assessment's fields (so you do not misread them):
 - "contribution": points a dimension adds to the weighted average. Large means strong.
@@ -143,7 +172,7 @@ ${fixFirstRule(fixFirst)}
 
 ${nudgeRules}
 
-Category vocabulary:
+Category vocabulary (id, label, what counts, what does not):
 ${vocabulary}
 
 Excluded categories (hard constraints from blocked gates):
@@ -158,6 +187,8 @@ ${SCHEMA}`;
   const sections = [
     'Deterministic assessment (computed in code; do not recompute or restate):',
     `<scoring_output>\n${JSON.stringify(output, null, 2)}\n</scoring_output>`,
+    'The company\'s selected answers (readiness inputs; already scored in code, do not re-score):',
+    `<selected_answers>\n${answersBlock(answers)}\n</selected_answers>`,
     'Problem statement (what the company wants; never part of the score):',
     `<problem_statement>\n${JSON.stringify(problem, null, 2)}\n</problem_statement>`,
   ];

@@ -33,7 +33,7 @@ export function App() {
         <IntakeWizard onSubmit={(readiness, problem) => { setSession({ readiness, problem }); window.scrollTo({ top: 0 }); }} />
       ) : (
         <Report output={output}>
-          <Recommendations output={output} problem={session.problem} />
+          <Recommendations output={output} problem={session.problem} answers={session.readiness} />
         </Report>
       )}
     </div>

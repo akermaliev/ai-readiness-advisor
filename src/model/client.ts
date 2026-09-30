@@ -13,25 +13,57 @@ export interface MessagesRequest {
   readonly max_tokens: number;
   readonly system: string;
   readonly messages: readonly ChatMessage[];
-  /** Structured output (v1.1, Fix 4): constrains the reply to a JSON Schema. GA, no beta header. */
-  readonly output_config?: { readonly format: { readonly type: 'json_schema'; readonly schema: unknown } };
+  /** Adaptive thinking (v1.2, A1). Only sent to models that support it; see MODEL_OPTIONS. */
+  readonly thinking?: { readonly type: 'adaptive' };
+  /**
+   * `format`: structured output (v1.1, Fix 4). `effort`: how much work the model puts in
+   * (v1.2, A1), only for models that support it. Both GA, no beta header.
+   */
+  readonly output_config?: {
+    readonly format: { readonly type: 'json_schema'; readonly schema: unknown };
+    readonly effort?: 'low' | 'medium' | 'high';
+  };
+}
+
+/** What the API reports about a reply, shown on the page for the real-call review (Part B). */
+export interface ReplyMeta {
+  /** The API's stop_reason ("end_turn", "max_tokens", "refusal", ...) or null if absent. */
+  readonly stopReason: string | null;
+  /** Content block types returned, in order, e.g. ["thinking", "text"]. */
+  readonly blockTypes: readonly string[];
+  readonly outputTokens: number | null;
+  /** usage.output_tokens_details.thinking_tokens */
+  readonly thinkingTokens: number | null;
 }
 
 export type TransportResult =
-  /** `stopReason` is the API's stop_reason ("end_turn", "max_tokens", "refusal", …) or null if absent. */
-  | { readonly ok: true; readonly text: string; readonly stopReason: string | null }
+  /**
+   * A 200 reply. `text` is "" when no text block came back (for example, a reply that spent
+   * the whole token budget thinking); the caller treats that like a malformed reply.
+   */
+  | ({ readonly ok: true; readonly text: string } & ReplyMeta)
   | { readonly ok: false; readonly kind: 'http' | 'network' | 'timeout'; readonly status: number | null; readonly message: string };
 
 export type Transport = (req: MessagesRequest) => Promise<TransportResult>;
 
 export const ANTHROPIC_MESSAGES_URL = 'https://api.anthropic.com/v1/messages';
 
+/**
+ * `adaptive`: the model supports thinking {type: "adaptive"} and output_config.effort.
+ * Checked against Anthropic's docs on 2026-09-30: Sonnet 5 and Opus 5.5 support both;
+ * Haiku 4.5 supports neither (adaptive thinking returns a 400 there), so it gets plain output.
+ */
 export const MODEL_OPTIONS = [
-  { id: 'claude-sonnet-5', label: 'Claude Sonnet 5 (default)' },
-  { id: 'claude-opus-5-5', label: 'Claude Opus 5.5' },
-  { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
+  { id: 'claude-sonnet-5', label: 'Claude Sonnet 5 (default)', adaptive: true },
+  { id: 'claude-opus-5-5', label: 'Claude Opus 5.5', adaptive: true },
+  { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5', adaptive: false },
 ] as const;
 export const DEFAULT_MODEL = 'claude-sonnet-5';
+
+/** Whether a model id gets adaptive thinking and effort. Unknown ids get neither (safe: no 400). */
+export function supportsAdaptive(model: string): boolean {
+  return MODEL_OPTIONS.some((m) => m.id === model && m.adaptive);
+}
 
 const isRecord = (v: unknown): v is Readonly<Record<string, unknown>> => typeof v === 'object' && v !== null;
 
@@ -42,8 +74,16 @@ function textOf(body: unknown): string | null {
   return parts.length === 0 ? null : parts.join('');
 }
 
-function stopReasonOf(body: unknown): string | null {
-  return isRecord(body) && typeof body.stop_reason === 'string' ? body.stop_reason : null;
+function metaOf(body: unknown): ReplyMeta {
+  const r = isRecord(body) ? body : {};
+  const usage = isRecord(r.usage) ? r.usage : {};
+  const details = isRecord(usage.output_tokens_details) ? usage.output_tokens_details : {};
+  return {
+    stopReason: typeof r.stop_reason === 'string' ? r.stop_reason : null,
+    blockTypes: Array.isArray(r.content) ? (r.content as readonly unknown[]).map((b) => (isRecord(b) && typeof b.type === 'string' ? b.type : 'unknown')) : [],
+    outputTokens: typeof usage.output_tokens === 'number' ? usage.output_tokens : null,
+    thinkingTokens: typeof details.thinking_tokens === 'number' ? details.thinking_tokens : null,
+  };
 }
 
 function errorMessageOf(body: unknown, status: number): string {
@@ -54,7 +94,8 @@ function errorMessageOf(body: unknown, status: number): string {
 export function createAnthropicTransport(
   apiKey: string, opts: { readonly timeoutMs?: number; readonly fetchImpl?: typeof fetch } = {},
 ): Transport {
-  const timeoutMs = opts.timeoutMs ?? 90_000;
+  // 16,000 output tokens with thinking can take minutes on the larger models (v1.2, A1).
+  const timeoutMs = opts.timeoutMs ?? 180_000;
   const doFetch = opts.fetchImpl ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
   return async (req) => {
     const controller = new AbortController();
@@ -74,10 +115,7 @@ export function createAnthropicTransport(
       });
       const body: unknown = await res.json().catch(() => null);
       if (!res.ok) return { ok: false, kind: 'http', status: res.status, message: errorMessageOf(body, res.status) };
-      const text = textOf(body);
-      return text === null
-        ? { ok: false, kind: 'http', status: res.status, message: 'The API returned no text content.' }
-        : { ok: true, text, stopReason: stopReasonOf(body) };
+      return { ok: true, text: textOf(body) ?? '', ...metaOf(body) };
     } catch (e) {
       if (controller.signal.aborted) return { ok: false, kind: 'timeout', status: null, message: `No response within ${Math.round(timeoutMs / 1000)} seconds.` };
       return { ok: false, kind: 'network', status: null, message: e instanceof Error ? e.message : 'Network error' };

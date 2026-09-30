@@ -5,17 +5,18 @@
  * the visitor's own answers. The result goes through the same gate verification and
  * back-office injection as a live response.
  */
+import { backOfficeExamples } from '../data/backOfficeExamples';
 import { SENSITIVITY_TARGET } from '../data/bands';
 import type { ModelResponse, ProblemStatement, ScoringOutput } from '../data/types';
 import { blockedCategories } from '../engine/gateEvaluation';
 import { dimensionLabel } from '../report/lookups';
 import { fallbackUseCases } from './fallbackUseCases';
 import { applyGateVerification, type VerifiedRecommendations } from './gateVerification';
-import { buildRecommendationPrompt } from './prompt';
+import { isNudgeActive, useCaseRange } from './prompt';
 import { deterministicSummary, fixFirstDimension, summaryText } from './summary';
 
 export function buildFallbackResponse(output: ScoringOutput, problem: ProblemStatement): ModelResponse {
-  const { range } = buildRecommendationPrompt(output, problem);
+  const range = useCaseRange(isNudgeActive(problem));
   const useCases = fallbackUseCases[output.industry].slice(0, range.max).map((u) => ({ ...u, isBackOfficeAlternative: false }));
   const fixFirst = fixFirstDimension(output);
   const blocked = blockedCategories(output.gates);
@@ -47,6 +48,6 @@ export function buildFallbackResponse(output: ScoringOutput, problem: ProblemSta
 }
 
 export function buildFallbackRecommendations(output: ScoringOutput, problem: ProblemStatement): VerifiedRecommendations {
-  const { fixture } = buildRecommendationPrompt(output, problem);
+  const fixture = isNudgeActive(problem) ? backOfficeExamples[output.industry] : null;
   return applyGateVerification(buildFallbackResponse(output, problem), output, fixture);
 }
