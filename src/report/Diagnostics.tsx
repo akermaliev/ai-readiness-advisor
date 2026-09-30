@@ -1,4 +1,4 @@
-import { DISPERSION_SIGMA_THRESHOLD, SENSITIVITY_TARGET } from '../data/bands';
+import { DISPERSION_SIGMA_THRESHOLD, FLAT_SENSITIVITY_MAX_DELTA, SENSITIVITY_TARGET } from '../data/bands';
 import type { ScoringOutput } from '../data/types';
 import { Callout, Section, StatusLabel } from '../ui/primitives';
 import { dimensionName } from './lookups';
@@ -7,6 +7,8 @@ import { dimensionName } from './lookups';
 export function Diagnostics({ output }: { output: ScoringOutput }) {
   const { dispersion, bottleneck } = output;
   const moves = output.sensitivity.filter((s) => s.delta > 0);
+  // Issue 2: when every move is small, the order is decided by rounding; say so.
+  const flat = moves.length > 1 && moves.every((s) => s.delta <= FLAT_SENSITIVITY_MAX_DELTA);
   return (
     <Section index={3} title="Diagnostics">
       <div className="grid gap-4 sm:grid-cols-2">
@@ -52,6 +54,14 @@ export function Diagnostics({ output }: { output: ScoringOutput }) {
               </li>
             ))}
           </ol>
+        )}
+        {flat && (
+          <div className="mt-3" data-testid="flat-sensitivity">
+            <Callout tone="info" title="No dimension is a clear priority">
+              Every move here is worth {FLAT_SENSITIVITY_MAX_DELTA} points or less, so the order comes down to rounding.
+              Treat these as roughly equal, and choose among them on cost and timing.
+            </Callout>
+          </div>
         )}
         <p className="mt-3 text-xs leading-relaxed text-ink-3">
           The largest shortfall and "fix this first" can name different dimensions, on purpose. Shortfall counts

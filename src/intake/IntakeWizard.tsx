@@ -25,7 +25,8 @@ export function IntakeWizard({ onSubmit }: { onSubmit: (readiness: ReadinessInpu
   const stepComplete = (s: StepId): boolean => {
     if (s === 'profile') return readiness.industry !== null && readiness.sizeBand !== null;
     if (s === 'problem') return toProblemStatement(problem) !== null;
-    return questionsByDimension[s].every((q) => readiness.rubricAnswers[q.id] !== undefined);
+    return questionsByDimension[s].every((q) => readiness.rubricAnswers[q.id] !== undefined)
+      && (s !== 'D4' || readiness.impactAssessment !== null);
   };
 
   const go = (next: number) => { setIndex(next); window.scrollTo({ top: 0 }); };
@@ -99,7 +100,9 @@ export function IntakeWizard({ onSubmit }: { onSubmit: (readiness: ReadinessInpu
             onSize={(sizeBand) => setReadiness({ ...readiness, sizeBand })} />
         ) : (
           <DimensionStep dimension={step} answers={readiness.rubricAnswers}
-            onAnswer={(q, points) => setReadiness({ ...readiness, rubricAnswers: { ...readiness.rubricAnswers, [q]: points } })} />
+            onAnswer={(q, points) => setReadiness({ ...readiness, rubricAnswers: { ...readiness.rubricAnswers, [q]: points } })}
+            impactAssessment={readiness.impactAssessment}
+            onImpactAssessment={(impactAssessment) => setReadiness({ ...readiness, impactAssessment })} />
         )}
       </div>
 
@@ -109,7 +112,8 @@ export function IntakeWizard({ onSubmit }: { onSubmit: (readiness: ReadinessInpu
       </div>
       {!stepComplete(step) && (
         <p className="mt-3 text-right text-xs text-ink-3">
-          {step === 'profile' ? 'Choose an industry and a company size to continue.' : 'Answer all four questions to continue.'}
+          {step === 'profile' ? 'Choose an industry and a company size to continue.'
+            : step === 'D4' ? 'Answer all five questions to continue.' : 'Answer all four questions to continue.'}
         </p>
       )}
     </div>

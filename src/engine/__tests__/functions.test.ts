@@ -136,44 +136,76 @@ describe('computeCrossProfile', () => {
 
 describe('evaluateGates', () => {
   const a = maxAnswersExcept({ '3.1': 0, '4.1': 1, '4.2': 3, '4.3': 0 });
+  const DONE = { impactAssessment: 'completed' } as const;
   it('returns universal + healthcare gates only, each with a status', () => {
-    const r = evaluateGates(a, 'healthcare');
+    const r = evaluateGates(a, 'healthcare', DONE);
     expect(r.map((g) => [g.id, g.status])).toEqual([
-      ['G-U1', 'passed'], ['G-U2', 'passed'], ['G-U3', 'warned-severe'], ['G-U4', 'passed'],
+      ['G-U1', 'passed'], ['G-U2', 'passed'], ['G-U3', 'warned-severe'], ['G-U4', 'passed'], ['G-U5', 'passed'],
       ['G-H1', 'blocked'], ['G-H2', 'passed'], ['G-H3', 'warned'],
     ]);
   });
+  it('spec ruling 6: "minimal sensitive data" (Q4.2 = 4) fires G-H1 and G-F3; "none" (5) does not', () => {
+    const minimal = maxAnswersExcept({ '4.1': 1, '4.2': 4 });
+    const none = maxAnswersExcept({ '4.1': 1, '4.2': 5 });
+    const status = (ans: typeof a, ind: 'healthcare' | 'financial', id: string) => evaluateGates(ans, ind, DONE).find((g) => g.id === id)?.status;
+    expect(status(minimal, 'healthcare', 'G-H1')).toBe('blocked');
+    expect(status(minimal, 'financial', 'G-F3')).toBe('warned-severe');
+    expect(status(none, 'healthcare', 'G-H1')).toBe('passed');
+    expect(status(none, 'financial', 'G-F3')).toBe('passed');
+  });
+  it('G-U5 (issue 9): sensitive data and no completed impact assessment -> severe warning, in every industry', () => {
+    const sensitive = maxAnswersExcept({ '4.2': 3 });
+    const g = (ans: typeof a, ia: 'no-personal-data' | 'no' | 'in-progress' | 'completed') =>
+      evaluateGates(ans, 'retail-ecommerce', { impactAssessment: ia }).find((x) => x.id === 'G-U5');
+    expect(g(sensitive, 'no')?.status).toBe('warned-severe');
+    expect(g(sensitive, 'in-progress')?.status).toBe('warned-severe');
+    expect(g(sensitive, 'completed')?.status).toBe('passed');
+    expect(g(sensitive, 'no-personal-data')?.status).toBe('passed');
+    expect(g(maxAnswersExcept({ '4.2': 4 }), 'no')?.status).toBe('warned-severe'); // ruling 6 applies here too
+    expect(g(maxAnswersExcept({ '4.2': 5 }), 'no')?.status).toBe('passed');        // no sensitive data
+    expect(g(sensitive, 'no')?.affectedCategories).toBe('all');
+  });
   it('reports global scope as "all" and category scope as its list', () => {
-    const r = evaluateGates(a, 'healthcare');
+    const r = evaluateGates(a, 'healthcare', DONE);
     expect(r.find((g) => g.id === 'G-U3')?.affectedCategories).toBe('all');
     expect(r.find((g) => g.id === 'G-H1')?.affectedCategories).toEqual(['phi-touching']);
   });
   it('the same answers under financial fire G-F3 instead, and no healthcare gate', () => {
-    const r = evaluateGates(a, 'financial');
+    const r = evaluateGates(a, 'financial', DONE);
     expect(r.some((g) => g.id.startsWith('G-H'))).toBe(false);
     expect(r.find((g) => g.id === 'G-F3')?.status).toBe('warned-severe');
     expect(r.find((g) => g.id === 'G-F1')?.status).toBe('blocked'); // Q4.3 = 0 <= 2
   });
   it('blockedCategories collects only blocked gates; warnings never exclude', () => {
-    expect(blockedCategories(evaluateGates(a, 'healthcare'))).toEqual(new Set(['phi-touching']));
+    expect(blockedCategories(evaluateGates(a, 'healthcare', DONE))).toEqual(new Set(['phi-touching']));
   });
 });
 
 describe('runConsistencyChecks', () => {
   const d = scores(80, 50, 50, 80, 50, 50);
+  const DONE = { impactAssessment: 'completed' } as const;
   it('C1 (mature data, undocumented process), C3 (budget, no sponsor), C5 (search without APIs)', () => {
     const a = maxAnswersExcept({ '3.1': 1, '6.1': 0, '6.2': 3, '2.1': 0, '2.4': 3 });
-    expect(runConsistencyChecks(a, d, 3).map((f) => f.id)).toEqual(['C1', 'C3', 'C5']);
+    expect(runConsistencyChecks(a, d, 3, DONE).map((f) => f.id)).toEqual(['C1', 'C3', 'C5']);
   });
   it('C2: governance >= 75 with no written policy', () => {
     const a = maxAnswersExcept({ '4.1': 0 });
-    expect(runConsistencyChecks(a, d, 3).map((f) => f.id)).toEqual(['C2']);
+    expect(runConsistencyChecks(a, d, 3, DONE).map((f) => f.id)).toEqual(['C2']);
   });
   it('C4 fires on every dimension >= 80 OR band Mature (spec ruling 3)', () => {
     const a = maxAnswersExcept({});
-    expect(runConsistencyChecks(a, scores(80, 80, 80, 80, 80, 80), 4).map((f) => f.id)).toEqual(['C4']);
-    expect(runConsistencyChecks(a, scores(100, 100, 100, 100, 100, 75), 5).map((f) => f.id)).toEqual(['C4']);
-    expect(runConsistencyChecks(a, scores(100, 100, 100, 100, 100, 75), 4)).toEqual([]);
+    expect(runConsistencyChecks(a, scores(80, 80, 80, 80, 80, 80), 4, DONE).map((f) => f.id)).toEqual(['C4']);
+    expect(runConsistencyChecks(a, scores(100, 100, 100, 100, 100, 75), 5, DONE).map((f) => f.id)).toEqual(['C4']);
+    expect(runConsistencyChecks(a, scores(100, 100, 100, 100, 100, 75), 4, DONE)).toEqual([]);
+  });
+  it('C6 (issue 9): governance >= 75 on sensitive data with no completed impact assessment', () => {
+    const a = maxAnswersExcept({ '4.2': 3 });
+    const ids = (ia: 'no-personal-data' | 'no' | 'in-progress' | 'completed', dims = d) => runConsistencyChecks(a, dims, 3, { impactAssessment: ia }).map((f) => f.id);
+    expect(ids('no')).toEqual(['C6']);
+    expect(ids('in-progress')).toEqual(['C6']);
+    expect(ids('completed')).toEqual([]);
+    expect(ids('no-personal-data')).toEqual([]);
+    expect(ids('no', scores(80, 50, 50, 70, 50, 50))).toEqual([]); // D4 below 75
   });
 });
 

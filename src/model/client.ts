@@ -13,10 +13,13 @@ export interface MessagesRequest {
   readonly max_tokens: number;
   readonly system: string;
   readonly messages: readonly ChatMessage[];
+  /** Structured output (v1.1, Fix 4): constrains the reply to a JSON Schema. GA, no beta header. */
+  readonly output_config?: { readonly format: { readonly type: 'json_schema'; readonly schema: unknown } };
 }
 
 export type TransportResult =
-  | { readonly ok: true; readonly text: string }
+  /** `stopReason` is the API's stop_reason ("end_turn", "max_tokens", "refusal", …) or null if absent. */
+  | { readonly ok: true; readonly text: string; readonly stopReason: string | null }
   | { readonly ok: false; readonly kind: 'http' | 'network' | 'timeout'; readonly status: number | null; readonly message: string };
 
 export type Transport = (req: MessagesRequest) => Promise<TransportResult>;
@@ -37,6 +40,10 @@ function textOf(body: unknown): string | null {
   const parts = (body.content as readonly unknown[]).flatMap((b) =>
     isRecord(b) && b.type === 'text' && typeof b.text === 'string' ? [b.text] : []);
   return parts.length === 0 ? null : parts.join('');
+}
+
+function stopReasonOf(body: unknown): string | null {
+  return isRecord(body) && typeof body.stop_reason === 'string' ? body.stop_reason : null;
 }
 
 function errorMessageOf(body: unknown, status: number): string {
@@ -70,7 +77,7 @@ export function createAnthropicTransport(
       const text = textOf(body);
       return text === null
         ? { ok: false, kind: 'http', status: res.status, message: 'The API returned no text content.' }
-        : { ok: true, text };
+        : { ok: true, text, stopReason: stopReasonOf(body) };
     } catch (e) {
       if (controller.signal.aborted) return { ok: false, kind: 'timeout', status: null, message: `No response within ${Math.round(timeoutMs / 1000)} seconds.` };
       return { ok: false, kind: 'network', status: null, message: e instanceof Error ? e.message : 'Network error' };

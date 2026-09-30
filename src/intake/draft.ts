@@ -5,7 +5,7 @@
  */
 import { questionBank } from '../data/questionBank';
 import type {
-  IndustryId, OptionPoints, PrimaryBottleneck, ProblemStatement, QuestionId, ReadinessInput, SizeBand,
+  ImpactAssessmentStatus, IndustryId, OptionPoints, PrimaryBottleneck, ProblemStatement, QuestionId, ReadinessInput, SizeBand,
   TargetFunction, TimeHorizon,
 } from '../data/types';
 import { ELABORATION_MAX_CHARS } from '../data/problemStatementOptions';
@@ -14,12 +14,15 @@ export interface ReadinessDraft {
   readonly rubricAnswers: Readonly<Partial<Record<QuestionId, OptionPoints>>>;
   readonly industry: IndustryId | null;
   readonly sizeBand: SizeBand | null;
+  /** Unscored (issue 9), asked on the D4 screen. */
+  readonly impactAssessment: ImpactAssessmentStatus | null;
 }
 
-export const EMPTY_READINESS: ReadinessDraft = { rubricAnswers: {}, industry: null, sizeBand: null };
+export const EMPTY_READINESS: ReadinessDraft = { rubricAnswers: {}, industry: null, sizeBand: null, impactAssessment: null };
 
 export function isCompleteReadiness(d: ReadinessDraft): d is ReadinessDraft & ReadinessInput {
-  return d.industry !== null && d.sizeBand !== null && questionBank.every((q) => d.rubricAnswers[q.id] !== undefined);
+  return d.industry !== null && d.sizeBand !== null && d.impactAssessment !== null
+    && questionBank.every((q) => d.rubricAnswers[q.id] !== undefined);
 }
 
 export interface ProblemDraft {

@@ -21,8 +21,9 @@ ANSWERS = {
   'D1': ['A database or SaaS system', 'Partly, one domain only', 'Only pre-built reports', 'Checked when something breaks'],
   'D2': ['Some systems, inconsistently', 'Modern on-prem or hybrid', 'Mostly consistent, some legacy gaps', 'Separately only'],
   'D3': ['Partially documented', 'Broadly similar', 'Measured occasionally', 'Known informally'],
-  'D4': ['Draft or informal', 'Minimal sensitive data', 'None', 'Partially, with effort'],
-  'D5': ['An existing IT/ops team', 'Some data/analytics capability', 'Tried, stalled', 'Buy vendor tool only'],
+  # Fifth D4 answer is the unscored impact-assessment question (v1.1, issue 9).
+  'D4': ['Draft or informal', 'Minimal sensitive data', 'None', 'Partially, with effort', 'No'],
+  'D5': ['An existing IT/ops team', 'Some data/analytics capability', 'Tried, stalled', 'Buy or partner: a vendor tool, or in-house plus external expertise'],
   'D6': ['Named and engaged', 'Approved for a pilot', 'Specific but unmeasured', 'Not considered'],
 }
 results = []
@@ -54,11 +55,15 @@ with sync_playwright() as p:
         expect(page.get_by_role('heading', level=1)).to_contain_text(dim)
         fieldsets = page.locator('fieldset')
         check(f'{dim}: blocked before answering', cont.is_disabled())
+        n = len(labels)
+        check(f'{dim}: {n} questions shown', fieldsets.count() == n)
         for i, label in enumerate(labels):
             fieldsets.nth(i).get_by_label(label, exact=True).check()
-            if i < 3:
-                check(f'{dim}: still blocked after {i+1}/4', cont.is_disabled())
-        check(f'{dim}: unblocked after 4/4', cont.is_enabled())
+            if i < n - 1:
+                check(f'{dim}: still blocked after {i+1}/{n}', cont.is_disabled())
+        check(f'{dim}: unblocked after {n}/{n}', cont.is_enabled())
+        if dim == 'D4':
+            check('D4: impact-assessment question marked "Not scored"', page.get_by_test_id('impact-assessment').get_by_text('Not scored', exact=True).count() == 1)
         cont.click()
 
     expect(page.get_by_role('heading', level=1)).to_have_text('What do you want from AI?')
@@ -78,19 +83,23 @@ with sync_playwright() as p:
 
     report = page.get_by_test_id('report')
     expect(report).to_be_visible()
-    check('Headline geometric = 50', page.get_by_test_id('score-geometric').inner_text() == '50')
-    check('Arithmetic = 51', page.get_by_test_id('score-arithmetic').inner_text() == '51')
+    check('Headline geometric = 51', page.get_by_test_id('score-geometric').inner_text() == '51')
+    check('Arithmetic = 52', page.get_by_test_id('score-arithmetic').inner_text() == '52')
     check('Band = Operational-capable', page.get_by_text('Operational-capable', exact=True).count() >= 1)
     check('Disclaimer line visible', page.get_by_test_id('disclaimer').is_visible())
     for n, title in [(1, 'Readiness band and score'), (2, 'Where the score comes from'), (3, 'Diagnostics'),
                      (4, 'Gates'), (6, 'How much the weights matter')]:
         check(f'Section {n} rendered: {title}', page.get_by_role('heading', name=title).is_visible())
-    headings = [h.inner_text() for h in page.locator('section h2').all()]
+    # The deterministic report's own sections; the optional Recommendations section below it is not one.
+    headings = [h.inner_text() for h in page.locator('section:not([data-testid=recommendations]) h2').all()]
     check(f'Section order matches tech doc: {headings}', headings == [
         'Readiness band and score', 'Where the score comes from', 'Diagnostics', 'Gates', 'How much the weights matter'])
     check('6 dimension rows', page.locator('section').nth(1).locator('li').count() == 6)
     check('Fix-this-first list present', page.get_by_test_id('sensitivity-list').locator('li').count() >= 1)
     check('Gate G-U? / G-M? evaluated (list or pass note)', page.get_by_text('checked and passed').count() + page.get_by_test_id('gate-list').count() >= 1)
+    check('G-U5 fires: minimal sensitive data, no impact assessment (issue 9, ruling 6)', 'G-U5' in report.inner_text())
+    check('Unscored answer did not move the score (still 51)', page.get_by_test_id('score-geometric').inner_text() == '51')
+    check('No floor note when no dimension is 0', page.get_by_test_id('floor-note').count() == 0)
     check('Cross-profile line present', 'depending on which industry profile' in page.get_by_test_id('cross-profile-line').inner_text()
           or 'under every industry profile' in page.get_by_test_id('cross-profile-line').inner_text())
     page.wait_for_timeout(1500)
@@ -104,6 +113,31 @@ with sync_playwright() as p:
     dp.get_by_role('button', name='Weak — regional retailer').click()
     dp.get_by_role('button', name='See my assessment').click()
     dp.screenshot(path=f'{SHOTS}/3-report-weak-dark.png', full_page=True)
+
+    # strong persona: the flat fix-first ranking (+2, +1, +1) is qualified (issue 2)
+    sp = browser.new_context(viewport={'width': 900, 'height': 1000}).new_page(); sp.goto(URL)
+    sp.get_by_role('button', name='Strong — regional bank operations').click()
+    sp.get_by_role('button', name='See my assessment').click()
+    check('Strong persona: flat ranking qualified', sp.get_by_test_id('flat-sensitivity').count() == 1)
+    check('Median walk: no flat qualifier (+9 top move)', page.get_by_test_id('flat-sensitivity').count() == 0)
+
+    # spec ruling 1: a dimension at 0 is named, and the headline is called floor-dominated
+    zp = browser.new_context(viewport={'width': 900, 'height': 1000}).new_page(); zp.goto(URL)
+    zp.get_by_role('button', name='Weak — regional retailer').click()
+    zp.get_by_role('button', name='Back to the rubric').click()   # D6
+    zp.get_by_role('button', name='Back').click()                 # D5
+    zp.get_by_role('button', name='Back').click()                 # D4
+    expect(zp.get_by_role('heading', level=1)).to_contain_text('D4')
+    zfs = zp.locator('fieldset')
+    for i, label in enumerate(['No', 'Yes, heavily, no controls mapped', 'None', 'No']):
+        zfs.nth(i).get_by_label(label, exact=True).check()
+    for _ in range(3):                                            # D5, D6, problem
+        zp.get_by_role('button', name='Continue').click()
+    zp.get_by_role('button', name='See my assessment').click()
+    note = zp.get_by_test_id('floor-note')
+    check('Zero dimension: floor note shown', note.count() == 1)
+    check('...naming D4 Governance & compliance', zp.get_by_text('D4 Governance & compliance scores 0, so the floor sets your headline').count() == 1)
+    zp.screenshot(path=f'{SHOTS}/7-floor-note.png', full_page=False)
     browser.close()
 
 failed = [n for n, ok in results if not ok]

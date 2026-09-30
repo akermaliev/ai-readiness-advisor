@@ -3,17 +3,36 @@
  * untrusted input: it is parsed, checked field by field, and rebuilt from known keys only,
  * so nothing the model adds beyond the schema can reach the UI.
  *
- * Word limits (<= 60 / 40 / 25 / 30) are prompt instructions, not validation failures: a
+ * Structured output (Fix 4) makes shape failures rare, but this stays: the API does not
+ * enforce item counts or enum casing, and the cross-field rules below are not expressible
+ * in a JSON Schema at all.
+ *
+ * Cross-field rules (checked only once the shape is valid, so repair messages stay focused):
+ *   - the pilot's title is one of the returned use cases (or the injected fixture), ignoring
+ *     case, quotes, spacing and trailing punctuation; roadmap titles are mapped to the exact one;
+ *   - the prerequisite names the fix-first dimension, or is null when there is none (Fix 1);
+ *   - every dimension id in text the reader sees carries its exact name, after or before the
+ *     id, any case, "&" or "and" (Fix 1).
+ *     The v1.0 run called D4 "process maturity" and D6 "oversight"; this catches that class.
+ *
+ * Word limits (<= 40 / 25 / 30) are prompt instructions, not validation failures: a
  * 42-word description is still a usable recommendation, and failing it would burn the one
  * retry on style rather than structure.
  */
+import { dimensions } from '../data/questionBank';
 import type {
-  BlockedAcknowledgement, GovernanceFlag, ModelResponse, ModelUseCase, Roadmap, UseCaseCategory,
+  BlockedAcknowledgement, DimensionId, GovernanceFlag, ModelResponse, ModelUseCase, Roadmap, UseCaseCategory,
 } from '../data/types';
-import type { UseCaseRange } from './prompt';
+import type { ReplyContract } from './prompt';
 import {
-  DIMENSION_IDS, GATE_IDS, GOVERNANCE_FLAG_TYPES, IMPLEMENTATION_RISK, isOneOf, OUTCOME_CONFIDENCE, USE_CASE_CATEGORIES,
+  canonicalOf, DIMENSION_IDS, GATE_IDS, GOVERNANCE_FLAG_TYPES, IMPLEMENTATION_RISK, OUTCOME_CONFIDENCE, USE_CASE_CATEGORIES,
 } from './vocabulary';
+
+/** Model-supplied values echoed in error messages are cut short; errors are shown on the page. */
+const shown = (v: unknown): string => {
+  const s = JSON.stringify(v) ?? String(v);
+  return s.length > 60 ? `${s.slice(0, 57)}...` : s;
+};
 
 export type ValidationResult =
   | { readonly ok: true; readonly value: ModelResponse }
@@ -51,8 +70,9 @@ class Collector {
   }
   oneOf<T extends string>(o: Obj, key: string, set: readonly T[], at: string): T {
     const v = o[key];
-    if (!isOneOf(set, v)) { this.errors.push(`${at}.${key} must be one of: ${set.join(', ')} (got ${JSON.stringify(v)})`); return set[0] as T; }
-    return v;
+    const canonical = canonicalOf(set, v);
+    if (canonical === undefined) { this.errors.push(`${at}.${key} must be one of: ${set.join(', ')} (got ${shown(v)})`); return set[0] as T; }
+    return canonical;
   }
   arr(o: Obj, key: string, at: string): readonly unknown[] {
     const v = o[key];
@@ -68,8 +88,9 @@ class Collector {
 function useCase(c: Collector, raw: unknown, at: string): ModelUseCase {
   const o = c.obj(raw, at);
   const categories = c.arr(o, 'categories', at).flatMap((v, i): UseCaseCategory[] => {
-    if (isOneOf(USE_CASE_CATEGORIES, v)) return [v];
-    c.errors.push(`${at}.categories[${i}] ${JSON.stringify(v)} is not in the category vocabulary`);
+    const canonical = canonicalOf(USE_CASE_CATEGORIES, v);
+    if (canonical !== undefined) return [canonical];
+    c.errors.push(`${at}.categories[${i}] ${shown(v)} is not in the category vocabulary`);
     return [];
   });
   const riskDrivers = c.arr(o, 'riskDrivers', at).flatMap((v, i) => {
@@ -121,7 +142,88 @@ function blocked(c: Collector, raw: unknown, at: string): BlockedAcknowledgement
   };
 }
 
-export function validateModelResponse(raw: unknown, range: UseCaseRange): ValidationResult {
+const NAMES: Readonly<Record<DimensionId, string>> = Object.fromEntries(dimensions.map((d) => [d.id, d.name])) as Record<DimensionId, string>;
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** A dimension's exact name as a pattern: any case, "&" or "and". */
+const namePattern = (id: DimensionId) => escapeRe(NAMES[id]).replace(/\s*&\s*/g, '\\s*(?:&|and)\\s*').replace(/ /g, '\\s+');
+const SEP = '[\\s:(),\\-\u2013\u2014]*';
+/** "D2" followed by its name ("D2 Integration architecture", "D2: …", "D2 (…)"). */
+const NAME_AFTER: Readonly<Record<DimensionId, RegExp>> = Object.fromEntries(
+  DIMENSION_IDS.map((id) => [id, new RegExp(`^${SEP}${namePattern(id)}`, 'i')]),
+) as Record<DimensionId, RegExp>;
+/** "D2" preceded by its name ("Integration architecture (D2)"). */
+const NAME_BEFORE: Readonly<Record<DimensionId, RegExp>> = Object.fromEntries(
+  DIMENSION_IDS.map((id) => [id, new RegExp(`${namePattern(id)}${SEP}$`, 'i')]),
+) as Record<DimensionId, RegExp>;
+
+/** Every "Dn" in `text` must carry that dimension's exact name, after or before it. One error per id per field. */
+function checkDimensionReferences(text: string | null, at: string, errors: string[]): void {
+  if (text === null) return;
+  const bad = new Set<DimensionId>();
+  for (const m of text.matchAll(/\bD([1-6])\b/g)) {
+    const id = `D${m[1] ?? ''}` as DimensionId;
+    const start = m.index ?? 0;
+    const ok = NAME_AFTER[id].test(text.slice(start + m[0].length)) || NAME_BEFORE[id].test(text.slice(0, start));
+    if (!ok) bad.add(id);
+  }
+  for (const id of bad) errors.push(`${at} refers to ${id} without its exact name; write it as "${id} ${NAMES[id]}"`);
+}
+
+/** Title comparison that ignores case, quotes, spacing and trailing punctuation. */
+const titleKey = (t: string) => t.normalize('NFKC').replace(/["'`\u2018\u2019\u201C\u201D]/g, '').replace(/\s+/g, ' ').trim()
+  .replace(/[.!;:,]+$/, '').toLowerCase();
+
+/**
+ * Cross-field rules. Returns the errors and the response with roadmap titles mapped to the
+ * exact use-case (or fixture) title they match, so the gate check compares like with like.
+ */
+function crossField(r: ModelResponse, contract: ReplyContract): { errors: string[]; value: ModelResponse } {
+  const errors: string[] = [];
+
+  const titles = [...r.useCases.map((u) => u.title), ...(contract.fixtureTitle === null ? [] : [contract.fixtureTitle])];
+  const canonical = new Map(titles.map((t) => [titleKey(t), t]));
+  const pilotTitle = canonical.get(titleKey(r.roadmap.pilotFirst.useCaseTitle));
+  if (pilotTitle === undefined) {
+    errors.push(`roadmap.pilotFirst.useCaseTitle ${shown(r.roadmap.pilotFirst.useCaseTitle)} is not exactly the title of one of your useCases`);
+  }
+  const value: ModelResponse = {
+    ...r,
+    roadmap: {
+      ...r.roadmap,
+      pilotFirst: { ...r.roadmap.pilotFirst, useCaseTitle: pilotTitle ?? r.roadmap.pilotFirst.useCaseTitle },
+      defer: r.roadmap.defer.map((d) => ({ ...d, useCaseTitle: canonical.get(titleKey(d.useCaseTitle)) ?? d.useCaseTitle })),
+    },
+  };
+
+  const { fixFirst } = contract;
+  if (fixFirst === null && r.roadmap.prerequisite !== null) {
+    errors.push('roadmap.prerequisite must be null: no dimension is below adequate, so there is nothing to fix first');
+  }
+  if (fixFirst !== null && (r.roadmap.prerequisite === null || !new RegExp(`\\b${fixFirst}\\b`).test(r.roadmap.prerequisite))) {
+    errors.push(`roadmap.prerequisite must name the dimension to fix first, written as "${fixFirst} ${NAMES[fixFirst]}"`);
+  }
+
+  r.useCases.forEach((u, i) => {
+    const at = `useCases[${i}]`;
+    for (const [k, v] of [['title', u.title], ['description', u.description], ['targetFunction', u.targetFunction], ['expectedOutcome', u.expectedOutcome]] as const) {
+      checkDimensionReferences(v, `${at}.${k}`, errors);
+    }
+    u.riskDrivers.forEach((d, j) => checkDimensionReferences(d, `${at}.riskDrivers[${j}]`, errors));
+    u.governanceFlags.forEach((g, j) => checkDimensionReferences(g.note, `${at}.governanceFlags[${j}].note`, errors));
+  });
+  checkDimensionReferences(r.roadmap.pilotFirst.rationale, 'roadmap.pilotFirst.rationale', errors);
+  checkDimensionReferences(r.roadmap.prerequisite, 'roadmap.prerequisite', errors);
+  r.roadmap.defer.forEach((d, i) => checkDimensionReferences(d.until, `roadmap.defer[${i}].until`, errors));
+  r.blockedAcknowledged.forEach((b, i) => {
+    for (const [k, v] of [['title', b.title], ['description', b.description], ['unblockCondition', b.unblockCondition]] as const) {
+      checkDimensionReferences(v, `blockedAcknowledged[${i}].${k}`, errors);
+    }
+  });
+  return { errors, value };
+}
+
+export function validateModelResponse(raw: unknown, contract: ReplyContract): ValidationResult {
+  const { range } = contract;
   const c = new Collector();
   const o = c.obj(raw, 'response');
   const useCases = c.arr(o, 'useCases', 'response').map((v, i) => useCase(c, v, `useCases[${i}]`));
@@ -135,11 +237,16 @@ export function validateModelResponse(raw: unknown, range: UseCaseRange): Valida
     roadmap: roadmap(c, o.roadmap),
     blockedAcknowledged: c.arr(o, 'blockedAcknowledged', 'response').map((v, i) => blocked(c, v, `blockedAcknowledged[${i}]`)),
   };
-  return c.errors.length === 0 ? { ok: true, value } : { ok: false, errors: c.errors };
+  if (c.errors.length > 0) return { ok: false, errors: c.errors };
+  const cross = crossField(value, contract);
+  return cross.errors.length === 0 ? { ok: true, value: cross.value } : { ok: false, errors: cross.errors };
 }
 
-/** Text in, validated response out. */
-export function parseModelReply(text: string, range: UseCaseRange): ValidationResult {
+/** Text in, validated response out. `stopReason` explains a cut-off or refused reply. */
+export function parseModelReply(text: string, contract: ReplyContract, stopReason: string | null = null): ValidationResult {
   const json = extractJson(text);
-  return json.ok ? validateModelResponse(json.value, range) : { ok: false, errors: [json.error] };
+  if (json.ok) return validateModelResponse(json.value, contract);
+  const why = stopReason === 'max_tokens' ? ' (the reply was cut off at the token limit)'
+    : stopReason === 'refusal' ? ' (the model declined to answer)' : '';
+  return { ok: false, errors: [json.error + why] };
 }

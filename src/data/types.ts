@@ -140,7 +140,7 @@ export type UseCaseCategory =
   | 'live-system-integration';
 
 export type GateId =
-  | 'G-U1' | 'G-U2' | 'G-U3' | 'G-U4'
+  | 'G-U1' | 'G-U2' | 'G-U3' | 'G-U4' | 'G-U5'
   | 'G-H1' | 'G-H2' | 'G-H3'
   | 'G-F1' | 'G-F2' | 'G-F3'
   | 'G-R1' | 'G-R2'
@@ -162,19 +162,28 @@ export interface AnswerCondition {
 }
 
 /**
+ * One clause over an unscored governance fact (v1.1, issue 9). Holds when the fact's
+ * value is one of `in`.
+ */
+export interface FactCondition {
+  readonly fact: 'impactAssessment';
+  readonly in: readonly ImpactAssessmentStatus[];
+}
+
+/**
  * A gate's answer-side condition. Every gate in the methodology is a conjunction,
  * so `all` is sufficient; Stage 2 evaluates it.
  */
 export interface GateCondition {
-  readonly all: readonly AnswerCondition[];
+  readonly all: readonly (AnswerCondition | FactCondition)[];
 }
 
 /**
  * Which recommendations a gate reaches.
  *
  * `global` fires on every recommendation regardless of category — distinct from
- * an empty category list, which would mean "reaches nothing". Four gates are
- * global: G-U3, G-U4, G-H3, G-F3.
+ * an empty category list, which would mean "reaches nothing". Five gates are
+ * global: G-U3, G-U4, G-U5, G-H3, G-F3.
  */
 export type GateScope =
   | { readonly kind: 'global' }
@@ -200,7 +209,7 @@ export interface Gate {
  * Consistency checks
  * ------------------------------------------------------------------ */
 
-export type ConsistencyCheckId = 'C1' | 'C2' | 'C3' | 'C4' | 'C5';
+export type ConsistencyCheckId = 'C1' | 'C2' | 'C3' | 'C4' | 'C5' | 'C6';
 
 /**
  * Methodology → Intake Question Bank → Consistency checks.
@@ -264,12 +273,20 @@ export interface CompensationBand {
 }
 
 /* ------------------------------------------------------------------ *
- * Inputs — three categories, not two (spec ruling 2)
+ * Inputs — three categories, not two (spec ruling 2), plus one unscored fact
  *
  *   Profile inputs (industry, size)  shape scoring, contribute no points
  *   Rubric inputs (24 answers)       the only things scored
+ *   Governance facts (v1.1)          feed gates and consistency checks, earn no points
  *   Intent inputs (problem stmt)     never touch scoring, only the prompt
  * ------------------------------------------------------------------ */
+
+/**
+ * v1.1 (issue 9) — "Has a privacy or AI impact assessment been completed for this
+ * process?" Asked on the D4 screen, unscored, so the 4 × 5 = 20 structure and the
+ * calibration are untouched. Read by gate G-U5 and consistency check C6 only.
+ */
+export type ImpactAssessmentStatus = 'no-personal-data' | 'no' | 'in-progress' | 'completed';
 
 /**
  * Everything `computeReadiness` needs, and nothing it must not see.
@@ -281,6 +298,8 @@ export interface ReadinessInput {
   readonly rubricAnswers: RubricAnswers;
   readonly industry: IndustryId;
   readonly sizeBand: SizeBand;
+  /** Unscored governance fact (issue 9). Never reaches the score, only G-U5 and C6. */
+  readonly impactAssessment: ImpactAssessmentStatus;
 }
 
 export type PrimaryBottleneck =

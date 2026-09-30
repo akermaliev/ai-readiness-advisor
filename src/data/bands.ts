@@ -104,8 +104,18 @@ export const compensationBands = [
 /** The compensation gap is clamped at this floor before banding (spec ruling, gap bands). */
 export const COMPENSATION_GAP_FLOOR = 0;
 
-/** `imbalanceNote` is present in the model response only when the gap exceeds this. */
+/**
+ * Spec ruling 5: the imbalance note shows at gap ≥ this, aligned with the band boundary
+ * (a gap of exactly 5 is "moderate"). Equivalently: whenever the compensation band is not
+ * balanced.
+ */
 export const IMBALANCE_NOTE_THRESHOLD = 5;
+
+/**
+ * Issue 2: when every "fix this first" Δ is at or below this, the ranking is qualified in
+ * the report and summary, because the order comes down to rounding.
+ */
+export const FLAT_SENSITIVITY_MAX_DELTA = 2;
 
 /** Dispersion flag threshold: σ above this is "unbalanced readiness". */
 export const DISPERSION_SIGMA_THRESHOLD = 20;
@@ -113,5 +123,10 @@ export const DISPERSION_SIGMA_THRESHOLD = 20;
 /** The "adequate" target each dimension is raised to for marginal sensitivity. */
 export const SENSITIVITY_TARGET = 75;
 
-/** Each `d_i` is floored at this before exponentiating, to stop `S_geom` collapsing to 0. */
+/**
+ * Each `d_i` is floored at this before taking logs (spec ruling 1). A deliberate calibration
+ * parameter, not a divide-by-zero guard: 1 is the unique floor at which ln(d) = 0, so a
+ * dimension with no capability contributes nothing to the weighted log-sum rather than
+ * subtracting from the others. The report names any dimension at 0.
+ */
 export const GEOMETRIC_FLOOR = 1;

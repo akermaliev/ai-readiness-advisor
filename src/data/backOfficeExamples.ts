@@ -9,11 +9,13 @@
  * ── AUTHORED CONTENT ──────────────────────────────────────────────────────────
  * Unlike every other file in this stage, this one is not a transcription. The
  * methodology resolves that five fixtures exist and what shape they take, but
- * supplies no text. The content below is written against the MIT finding the
- * nudge rests on: measurable returns cluster in back-office work — document
- * automation, procurement, risk review — while over 50% of 2025 AI budgets went
- * to high-visibility, low-ROI sales and marketing pilots. Read these five on
- * their merits; there is nothing to diff them against.
+ * supplies no text. The content below is written against the MIT NANDA finding
+ * the nudge rests on (The GenAI Divide, 2025, pp. 9 and 20-21): executives asked to
+ * split a hypothetical $100 of GenAI budget put about 70% into sales and marketing,
+ * while "some of the most dramatic cost savings" the study documented came from
+ * back-office automation (BPO elimination, agency spend, risk checks). Note the
+ * 70% is an allocation exercise, not measured spend. Read these five on their
+ * merits; there is nothing to diff them against.
  * ─────────────────────────────────────────────────────────────────────────────
  *
  * Every fixture carries `isBackOfficeAlternative: true` and at least one

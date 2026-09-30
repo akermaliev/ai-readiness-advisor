@@ -1,10 +1,14 @@
 import { IMBALANCE_NOTE_THRESHOLD } from '../data/bands';
 import type { ScoringOutput } from '../data/types';
 import { Callout, Section } from '../ui/primitives';
-import { bandFraming, bandIsMature, compensationText, industryLabel, industryRationale, sizeLabel } from './lookups';
+import { bandFraming, bandIsMature, compensationText, dimensionLabel, industryLabel, industryRationale, sizeLabel } from './lookups';
 
-/** Section 1 — band + composite: geometric headline, arithmetic beside it, gap note when > 5. */
+/**
+ * Section 1 — band + composite: geometric headline, arithmetic beside it, gap note when
+ * ≥ 5 (spec ruling 5), and a floor note when any dimension scores 0 (spec ruling 1).
+ */
 export function Headline({ output }: { output: ScoringOutput }) {
+  const zeroed = output.dimensions.filter((d) => d.normalized === 0);
   return (
     <Section index={1} title="Readiness band and score">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -28,7 +32,16 @@ export function Headline({ output }: { output: ScoringOutput }) {
       </div>
 
       <div className="mt-5 space-y-3">
-        {output.compensationGap > IMBALANCE_NOTE_THRESHOLD && (
+        {zeroed.length > 0 && (
+          <Callout tone="serious" title={`${zeroed.map((d) => dimensionLabel(d.id)).join(', ')} ${zeroed.length === 1 ? 'scores' : 'score'} 0, so the floor sets your headline`}>
+            <span data-testid="floor-note">
+              The headline treats a dimension at 0 as 1, its floor, and a dimension at the floor adds nothing to the
+              geometric mean. With a zero here, the headline is dominated by the floor: a single one-point answer
+              could move it by a whole band. Read it as "this capability is missing", not as a precise measurement.
+            </span>
+          </Callout>
+        )}
+        {output.compensationGap >= IMBALANCE_NOTE_THRESHOLD && (
           <Callout tone="serious" title={`The average overstates you by ${output.compensationGap} points`}>
             {compensationText(output.compensationBand)}. The headline uses a geometric mean, which does
             not let a strong dimension paper over a weak one.
@@ -36,8 +49,8 @@ export function Headline({ output }: { output: ScoringOutput }) {
         )}
         {bandIsMature(output.band.label) && (
           <Callout tone="warning" title="Uniformly high self-assessment is statistically unusual">
-            Fewer than 1% of organizations score above 50 on comparable maturity indices. Check the
-            confidence flags below before relying on this band.
+            On a different instrument, ServiceNow's 2025 Enterprise AI Maturity Index, fewer than 1% of
+            respondents scored above 50 of 100. Check the confidence flags below before relying on this band.
           </Callout>
         )}
         <p className="rounded-lg border border-line bg-surface px-4 py-3 text-sm text-ink" data-testid="disclaimer">

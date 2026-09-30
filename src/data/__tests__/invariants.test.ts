@@ -3,7 +3,7 @@
  * so an edit to any data table that breaks one fails the build loudly.
  */
 import { describe, expect, it } from 'vitest';
-import { dimensions, MAX_DIMENSION_RAW, questionBank, questionsByDimension } from '../questionBank';
+import { dimensions, impactAssessmentQuestion, MAX_DIMENSION_RAW, questionBank, questionsByDimension } from '../questionBank';
 import { industryIds, WEIGHT_TOTAL, weightProfiles } from '../weightProfiles';
 import { sizeBands, sizeModifiers } from '../sizeModifiers';
 import { consistencyChecks, gates } from '../gates';
@@ -80,14 +80,18 @@ describe('question bank', () => {
 });
 
 describe('gates', () => {
-  it('has 14 gates with unique ids', () => {
-    expect(gates).toHaveLength(14);
-    expect(new Set(gates.map((g) => g.id)).size).toBe(14);
+  it('has 15 gates with unique ids', () => {
+    expect(gates).toHaveLength(15);
+    expect(new Set(gates.map((g) => g.id)).size).toBe(15);
   });
 
-  it('only references question ids that exist', () => {
+  it('only references question ids that exist, and facts only with their real option values', () => {
+    const iaValues = impactAssessmentQuestion.options.map((o) => o.value);
     for (const g of gates) {
-      for (const c of g.condition.all) expect(ALL_QUESTION_IDS, g.id).toContain(c.questionId);
+      for (const c of g.condition.all) {
+        if ('fact' in c) for (const v of c.in) expect(iaValues, g.id).toContain(v);
+        else expect(ALL_QUESTION_IDS, g.id).toContain(c.questionId);
+      }
     }
   });
 
@@ -97,14 +101,14 @@ describe('gates', () => {
     }
   });
 
-  it('marks exactly G-U3, G-U4, G-H3, G-F3 as global', () => {
+  it('marks exactly G-U3, G-U4, G-U5, G-H3, G-F3 as global', () => {
     expect(gates.filter((g) => g.scope.kind === 'global').map((g) => g.id)).toEqual([
-      'G-U3', 'G-U4', 'G-H3', 'G-F3',
+      'G-U3', 'G-U4', 'G-U5', 'G-H3', 'G-F3',
     ]);
   });
 
-  it('defines consistency checks C1-C5', () => {
-    expect(consistencyChecks.map((c) => c.id)).toEqual(['C1', 'C2', 'C3', 'C4', 'C5']);
+  it('defines consistency checks C1-C6', () => {
+    expect(consistencyChecks.map((c) => c.id)).toEqual(['C1', 'C2', 'C3', 'C4', 'C5', 'C6']);
   });
 });
 

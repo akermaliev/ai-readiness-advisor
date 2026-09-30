@@ -40,7 +40,7 @@ export const calibrationPersonas: readonly CalibrationPersona[] = [
     narrative:
       'A 70-person regional retailer. Orders live in a SaaS e-commerce platform, but the target process — weekly sales and stock reporting — runs off spreadsheet exports on a shared drive. The product catalog is agreed; customer records are split between the store and the email tool. Nobody owns data quality, there is no written data policy, and nothing like this has been built before. The owner is curious; budget is being discussed.',
     target: { min: 25, max: 40 },
-    input: { rubricAnswers: weakAnswers, industry: 'retail-ecommerce', sizeBand: '50-250' },
+    input: { rubricAnswers: weakAnswers, industry: 'retail-ecommerce', sizeBand: '50-250', impactAssessment: 'no' },
   },
   {
     id: 'median',
@@ -54,11 +54,13 @@ export const calibrationPersonas: readonly CalibrationPersona[] = [
         '2.1': 3, '2.2': 4, '2.3': 3, '2.4': 2,
         '3.1': 3, '3.2': 2, '3.3': 3, '3.4': 2,
         '4.1': 1, '4.2': 4, '4.3': 0, '4.4': 2,
-        '5.1': 3, '5.2': 4, '5.3': 1, '5.4': 3,
+        '5.1': 3, '5.2': 4, '5.3': 1, '5.4': 5, // 5.4: buy (was 3; buy and partner merged at 5, issue 8)
         '6.1': 5, '6.2': 3, '6.3': 3, '6.4': 0,
       },
       industry: 'manufacturing-logistics',
       sizeBand: '50-250',
+      // Demand forecasting over orders and inventory: no personal data in the target process.
+      impactAssessment: 'no-personal-data',
     },
   },
   {
@@ -78,6 +80,7 @@ export const calibrationPersonas: readonly CalibrationPersona[] = [
       },
       industry: 'financial',
       sizeBand: '50-250',
+      impactAssessment: 'completed',
     },
   },
   {
@@ -90,6 +93,7 @@ export const calibrationPersonas: readonly CalibrationPersona[] = [
       rubricAnswers: { ...weakAnswers, '1.2': 0, '6.2': 0 },
       industry: 'retail-ecommerce',
       sizeBand: '50-250',
+      impactAssessment: 'no',
     },
   },
 ];

@@ -6,7 +6,7 @@
  *
  * Each gate has two independent tests:
  *   - `condition` — the answer-side test, a conjunction of machine-checkable clauses
- *     over rubric answers.
+ *     over rubric answers (and, for G-U5, the unscored impact-assessment fact).
  *   - `scope` — the recommendation-side test. `{ kind: 'categories' }` means the gate
  *     only reaches recommendations carrying one of those categories; `{ kind: 'global' }`
  *     means it reaches every recommendation. Global is explicit rather than an empty
@@ -73,6 +73,28 @@ export const gates = [
     unblockCondition:
       'Identify who owns the workflow after launch — a named person or team, not "whoever builds it" (Q5.1 ≥ 1).',
   },
+  {
+    // v1.1, issue 9. Reads the unscored impact-assessment fact. Uses Q4.2 ≤ 4 for the same
+    // reason as spec ruling 6: "minimal sensitive data" is not "no sensitive data".
+    // "No personal data involved" does not fire it: a PIA/DPIA is about personal data, and
+    // Q4.2's sensitive data can be non-personal (corporate financial records).
+    id: 'G-U5',
+    appliesTo: 'universal',
+    effect: 'warn-severe',
+    condition: {
+      all: [
+        { questionId: '4.2', op: 'lte', value: 4 },
+        { fact: 'impactAssessment', in: ['no', 'in-progress'] },
+      ],
+    },
+    scope: { kind: 'global' },
+    conditionText:
+      'Q4.2 ≤ 4 (sensitive data in scope) AND no completed privacy or AI impact assessment for this process',
+    effectText:
+      'Sensitive data with no completed impact assessment. One may be required before this processing (for example GDPR Art. 35, or California\'s CCPA risk-assessment rules); treat it as a prerequisite and confirm with counsel.',
+    unblockCondition:
+      'Complete a privacy impact assessment (PIA/DPIA) for this process, or the applicable AI impact assessment, and keep it current.',
+  },
 
   /* ---------------- Healthcare gates ---------------- */
   {
@@ -81,13 +103,15 @@ export const gates = [
     effect: 'block',
     condition: {
       all: [
-        { questionId: '4.2', op: 'lte', value: 3 },
+        // Spec ruling 6: ≤ 4, not ≤ 3. HIPAA has no de minimis threshold; "minimal
+        // sensitive data" is not "no sensitive data".
+        { questionId: '4.2', op: 'lte', value: 4 },
         { questionId: '4.1', op: 'lte', value: 1 },
       ],
     },
     scope: { kind: 'categories', categories: ['phi-touching'] },
     conditionText:
-      'Q4.2 indicates PHI AND Q4.1 ≤ 1 (no written handling policy)',
+      'Q4.2 ≤ 4 (any sensitive data, including "minimal") AND Q4.1 ≤ 1 (no written handling policy)',
     effectText: 'Block all PHI-touching use cases.',
     unblockCondition:
       'Put a written data handling / classification policy in place and follow it (Q4.1 ≥ 3).',
@@ -152,11 +176,12 @@ export const gates = [
     condition: {
       all: [
         { questionId: '4.1', op: 'lte', value: 1 },
-        { questionId: '4.2', op: 'lte', value: 3 },
+        // Spec ruling 6: ≤ 4. GLBA, SOX and PCI-DSS have no de minimis threshold.
+        { questionId: '4.2', op: 'lte', value: 4 },
       ],
     },
     scope: { kind: 'global' },
-    conditionText: 'Q4.1 ≤ 1 AND process touches financial records',
+    conditionText: 'Q4.1 ≤ 1 AND Q4.2 ≤ 4 (process touches financial records, even minimally)',
     effectText:
       'Regulated records handled without a written, followed data handling policy.',
     unblockCondition:
@@ -251,5 +276,11 @@ export const consistencyChecks = [
     id: 'C5',
     conditionText: 'Q2.1 = 0 but Q2.4 ≥ 3',
     description: 'Unified search claimed without system connectivity',
+  },
+  {
+    // v1.1, issue 9.
+    id: 'C6',
+    conditionText: 'D4 normalized ≥ 75, Q4.2 ≤ 4, and no completed impact assessment',
+    description: 'Claims governance readiness on sensitive data with no completed privacy or AI impact assessment',
   },
 ] as const satisfies readonly ConsistencyCheck[];

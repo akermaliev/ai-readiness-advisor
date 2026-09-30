@@ -7,10 +7,15 @@
  *   actually blocked in this assessment, for a category that gate actually covers.
  * - The back-office fixture (nudge active) is injected after the model's use cases; if the
  *   fixture itself trips a blocked gate it is surfaced in `blocked`, never dropped silently.
+ * - The pilot is checked against the fix-first dimension (Fix 1): a pilot that depends on the
+ *   dimension to fix first is flagged, not dropped.
+ * - The model's `scoreNarrative` and `imbalanceNote` do not pass through (Fix 2). The result
+ *   carries the deterministic summary instead, so a wrong restated number cannot be rendered.
  */
 import type {
-  BackOfficeFixture, BlockedAcknowledgement, GateResult, ModelResponse, ModelUseCase, Roadmap, ScoringOutput, UseCaseCategory,
+  BackOfficeFixture, BlockedAcknowledgement, DimensionId, GateResult, ModelResponse, ModelUseCase, Roadmap, ScoringOutput, UseCaseCategory,
 } from '../data/types';
+import { deterministicSummary, fixFirstDimension, type DeterministicSummary } from './summary';
 
 export interface DisplayUseCase {
   readonly useCase: ModelUseCase;
@@ -25,12 +30,14 @@ export interface DisplayBlocked extends BlockedAcknowledgement {
 }
 
 export interface VerifiedRecommendations {
-  readonly scoreNarrative: string;
-  readonly imbalanceNote: string | null;
+  /** Computed from ScoringOutput, no model involved. Shown in place of the model's narrative. */
+  readonly summary: DeterministicSummary;
   readonly useCases: readonly DisplayUseCase[];
   readonly roadmap: Roadmap;
-  /** True when the roadmap's pilot was one of the dropped use cases. */
+  /** True when the roadmap's pilot was dropped by the gate check, or is the gated fixture. */
   readonly pilotBlocked: boolean;
+  /** The fix-first dimension when the surviving pilot depends on it; otherwise null (Fix 1). */
+  readonly pilotDependsOnFixFirst: DimensionId | null;
   readonly blocked: readonly DisplayBlocked[];
   /** Titles of model use cases removed by the client-side check. */
   readonly dropped: readonly string[];
@@ -66,11 +73,14 @@ export function applyGateVerification(
     if (real) blocked.push({ ...b, source: 'model' });
   }
 
+  // Titles the reader must not see as live suggestions: dropped model use cases, and the
+  // fixture when a gate blocks it (the model may name the fixture as its pilot or a deferral).
+  const unavailable = new Set<string>();
   if (fixture !== null) {
     const { tradeoff, ...useCase } = fixture;
     const v = violations(useCase, output.gates, 'fixture');
     if (v.length === 0) kept.push({ useCase, source: 'fixture', tradeoff });
-    else blocked.push(...v);
+    else { blocked.push(...v); unavailable.add(fixture.title); }
   }
 
   const seen = new Set<string>();
@@ -81,13 +91,17 @@ export function applyGateVerification(
     return true;
   });
 
-  const droppedSet = new Set(dropped);
+  for (const d of dropped) unavailable.add(d);
+  const pilotTitle = response.roadmap.pilotFirst.useCaseTitle;
+  const pilotBlocked = unavailable.has(pilotTitle);
+  const fixFirst = fixFirstDimension(output);
+  const pilot = pilotBlocked ? undefined : kept.find((k) => k.useCase.title === pilotTitle);
   return {
-    scoreNarrative: response.scoreNarrative,
-    imbalanceNote: response.imbalanceNote,
+    summary: deterministicSummary(output),
     useCases: kept,
-    roadmap: { ...response.roadmap, defer: response.roadmap.defer.filter((d) => !droppedSet.has(d.useCaseTitle)) },
-    pilotBlocked: droppedSet.has(response.roadmap.pilotFirst.useCaseTitle),
+    roadmap: { ...response.roadmap, defer: response.roadmap.defer.filter((d) => !unavailable.has(d.useCaseTitle)) },
+    pilotBlocked,
+    pilotDependsOnFixFirst: fixFirst !== null && pilot?.useCase.dependsOnDimension === fixFirst ? fixFirst : null,
     blocked: uniqueBlocked,
     dropped,
   };

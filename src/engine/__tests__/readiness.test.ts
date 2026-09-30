@@ -20,6 +20,7 @@ describe('computeReadiness — full hand-computed output', () => {
     rubricAnswers: maxAnswersExcept({ '6.4': 0 }),
     industry: 'healthcare',
     sizeBand: '50-250',
+    impactAssessment: 'completed',
   };
   const expected: ScoringOutput = {
     industry: 'healthcare',
@@ -56,6 +57,7 @@ describe('computeReadiness — full hand-computed output', () => {
       { id: 'G-U2', status: 'passed', condition: expect.any(String) as string, affectedCategories: ['entity-resolution'], unblockCondition: expect.any(String) as string },
       { id: 'G-U3', status: 'passed', condition: expect.any(String) as string, affectedCategories: 'all', unblockCondition: expect.any(String) as string },
       { id: 'G-U4', status: 'passed', condition: expect.any(String) as string, affectedCategories: 'all', unblockCondition: expect.any(String) as string },
+      { id: 'G-U5', status: 'passed', condition: expect.any(String) as string, affectedCategories: 'all', unblockCondition: expect.any(String) as string },
       { id: 'G-H1', status: 'passed', condition: expect.any(String) as string, affectedCategories: ['phi-touching'], unblockCondition: expect.any(String) as string },
       { id: 'G-H2', status: 'passed', condition: expect.any(String) as string, affectedCategories: ['clinical-decision'], unblockCondition: expect.any(String) as string },
       { id: 'G-H3', status: 'passed', condition: expect.any(String) as string, affectedCategories: 'all', unblockCondition: expect.any(String) as string },
@@ -92,6 +94,7 @@ describe('computeReadiness — edges', () => {
     rubricAnswers: answers({ D1: ALL_ZEROS, D2: ALL_ZEROS, D3: ALL_ZEROS, D4: ALL_ZEROS, D5: ALL_ZEROS, D6: ALL_ZEROS }),
     industry: 'tech-saas',
     sizeBand: '50-250',
+    impactAssessment: 'no',
   };
 
   it('all-zero company: S_geom floors to 1, S_arith is 0, and the gap clamps to 0 (never negative)', () => {
@@ -104,9 +107,24 @@ describe('computeReadiness — edges', () => {
     expect(out.dimensions.every((d) => d.contributionShare === 0)).toBe(true);
   });
 
-  it('all-zero company: blocks retrieval and entity-resolution, warns on process and maintainer', () => {
+  it('all-zero company: blocks retrieval and entity-resolution, warns on process, maintainer and missing impact assessment', () => {
     const statuses = Object.fromEntries(computeReadiness(zero).gates.map((g) => [g.id, g.status]));
-    expect(statuses).toEqual({ 'G-U1': 'blocked', 'G-U2': 'blocked', 'G-U3': 'warned-severe', 'G-U4': 'warned-severe' });
+    expect(statuses).toEqual({
+      'G-U1': 'blocked', 'G-U2': 'blocked', 'G-U3': 'warned-severe', 'G-U4': 'warned-severe', 'G-U5': 'warned-severe',
+    });
+  });
+
+  it('rejects an impact-assessment value that is not one of its options', () => {
+    const bad = { ...zero, impactAssessment: 'maybe' } as unknown as ReadinessInput;
+    expect(() => computeReadiness(bad)).toThrow(/impactAssessment: maybe/);
+  });
+
+  it('the impact-assessment answer never changes the score (issue 9: unscored)', () => {
+    const scored = (ia: ReadinessInput['impactAssessment']) => {
+      const { gates: _g, confidenceFlags: _c, ...rest } = computeReadiness({ ...zero, impactAssessment: ia });
+      return JSON.stringify(rest);
+    };
+    expect(new Set((['no-personal-data', 'no', 'in-progress', 'completed'] as const).map(scored)).size).toBe(1);
   });
 
   it('all-zero company: the largest shortfall is the heaviest dimension (tech D2, 25 x 100 / 100)', () => {

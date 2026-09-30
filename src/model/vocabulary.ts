@@ -10,7 +10,7 @@ export const USE_CASE_CATEGORIES = [
 ] as const satisfies readonly UseCaseCategory[];
 
 export const GATE_IDS = [
-  'G-U1', 'G-U2', 'G-U3', 'G-U4', 'G-H1', 'G-H2', 'G-H3', 'G-F1', 'G-F2', 'G-F3', 'G-R1', 'G-R2', 'G-M1', 'G-M2',
+  'G-U1', 'G-U2', 'G-U3', 'G-U4', 'G-U5', 'G-H1', 'G-H2', 'G-H3', 'G-F1', 'G-F2', 'G-F3', 'G-R1', 'G-R2', 'G-M1', 'G-M2',
 ] as const satisfies readonly GateId[];
 
 export const DIMENSION_IDS = ['D1', 'D2', 'D3', 'D4', 'D5', 'D6'] as const satisfies readonly DimensionId[];
@@ -20,3 +20,10 @@ export const GOVERNANCE_FLAG_TYPES = ['data-sensitivity', 'compliance', 'reliabi
 
 export const isOneOf = <T extends string>(set: readonly T[], v: unknown): v is T =>
   typeof v === 'string' && (set as readonly string[]).includes(v);
+
+/**
+ * The canonical member of `set` that matches `v` ignoring case, or undefined. Structured
+ * output does not guarantee enum casing (Anthropic docs), so a "High" is accepted as "high".
+ */
+export const canonicalOf = <T extends string>(set: readonly T[], v: unknown): T | undefined =>
+  typeof v === 'string' ? set.find((x) => x.toLowerCase() === v.toLowerCase()) : undefined;

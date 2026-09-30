@@ -5,6 +5,6 @@ export {
   normalizeDimension, computeArithmetic, computeGeometric, computeContribution, computeDispersion,
   computeBottleneck, computeSensitivity, computeCrossProfile,
 } from './scores';
-export { evaluateGates, blockedCategories } from './gateEvaluation';
+export { evaluateGates, blockedCategories, type GovernanceFacts } from './gateEvaluation';
 export { runConsistencyChecks } from './consistency';
 export { assignBand, assignCompensationBand } from './banding';

@@ -8,6 +8,8 @@ import { useCaseCategoryLabels } from '../data/useCaseCategories';
 import { industryProfiles } from '../data/weightProfiles';
 
 export const dimensionName = (id: DimensionId): string => dimensions.find((d) => d.id === id)?.name ?? id;
+/** Id plus exact name, e.g. "D2 Integration architecture" — the one form used in generated text. */
+export const dimensionLabel = (id: DimensionId): string => `${id} ${dimensionName(id)}`;
 export const industryLabel = (id: IndustryId): string => industryProfiles.find((p) => p.id === id)?.label ?? id;
 export const industryRationale = (id: IndustryId): string => industryProfiles.find((p) => p.id === id)?.rationale ?? '';
 export const sizeLabel = (id: SizeBand): string => sizeBands.find((s) => s.id === id)?.label ?? id;

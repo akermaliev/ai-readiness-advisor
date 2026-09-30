@@ -47,7 +47,7 @@ export const industryProfiles = [
     id: 'financial',
     label: 'Financial',
     rationale:
-      "Governance-dominant through a different mechanism: model risk management (the SR 11-7 lineage), explainability, auditability, fair-lending exposure. Data infrastructure is typically more mature than healthcare's, so D1 sits slightly lower.",
+      "Governance-dominant through a different mechanism: model risk management (SR 11-7, superseded in April 2026 by SR 26-2), explainability, auditability, fair-lending exposure. Data infrastructure is typically more mature than healthcare's, so D1 sits slightly lower.",
   },
   {
     id: 'retail-ecommerce',

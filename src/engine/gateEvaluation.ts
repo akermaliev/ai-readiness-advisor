@@ -1,10 +1,16 @@
 /** Methodology → Gate Layer. Interprets the declarative gates in `data/gates.ts`. */
 import { gates } from '../data/gates';
 import type {
-  AnswerCondition, GateResult, GateStatus, IndustryId, RubricAnswers, UseCaseCategory,
+  AnswerCondition, FactCondition, GateResult, GateStatus, ImpactAssessmentStatus, IndustryId, RubricAnswers, UseCaseCategory,
 } from '../data/types';
 
-function holds(c: AnswerCondition, answers: RubricAnswers): boolean {
+/** Unscored inputs a gate may read (v1.1, issue 9). */
+export interface GovernanceFacts {
+  readonly impactAssessment: ImpactAssessmentStatus;
+}
+
+function holds(c: AnswerCondition | FactCondition, answers: RubricAnswers, facts: GovernanceFacts): boolean {
+  if ('fact' in c) return c.in.includes(facts[c.fact]);
   const answer = answers[c.questionId];
   switch (c.op) {
     case 'eq': return answer === c.value;
@@ -18,11 +24,13 @@ function holds(c: AnswerCondition, answers: RubricAnswers): boolean {
  * one result per gate, passed ones included, in declaration order. Independent of the
  * composite score. `affectedCategories` is `'all'` for a global-scope gate.
  */
-export function evaluateGates(answers: RubricAnswers, industry: IndustryId): readonly GateResult[] {
+export function evaluateGates(
+  answers: RubricAnswers, industry: IndustryId, facts: GovernanceFacts,
+): readonly GateResult[] {
   return gates
     .filter((g) => g.appliesTo === 'universal' || g.appliesTo === industry)
     .map((g): GateResult => {
-      const fired = g.condition.all.every((c) => holds(c, answers));
+      const fired = g.condition.all.every((c) => holds(c, answers, facts));
       const status: GateStatus = !fired ? 'passed'
         : g.effect === 'block' ? 'blocked'
         : g.effect === 'warn-severe' ? 'warned-severe'

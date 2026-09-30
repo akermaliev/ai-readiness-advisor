@@ -11,7 +11,7 @@
  * differences of the displayed integers, so "54 → 68" always adds up on screen.
  */
 import { COMPENSATION_GAP_FLOOR } from '../data/bands';
-import { questionBank } from '../data/questionBank';
+import { impactAssessmentQuestion, questionBank } from '../data/questionBank';
 import type { ReadinessInput, RubricAnswers, ScoringOutput } from '../data/types';
 import { assignBand, assignCompensationBand } from './banding';
 import { runConsistencyChecks } from './consistency';
@@ -44,8 +44,12 @@ export function validateRubricAnswers(answers: RubricAnswers): void {
 }
 
 export function computeReadiness(input: ReadinessInput): ScoringOutput {
-  const { rubricAnswers, industry, sizeBand } = input;
+  const { rubricAnswers, industry, sizeBand, impactAssessment } = input;
   validateRubricAnswers(rubricAnswers);
+  if (!impactAssessmentQuestion.options.some((o) => o.value === impactAssessment)) {
+    throw new RangeError(`impactAssessment: ${String(impactAssessment)} is not one of its option values`);
+  }
+  const facts = { impactAssessment };
 
   const weights = resolveWeights(industry, sizeBand); // once per assessment
   const raw = rawDimensionScores(rubricAnswers);
@@ -85,7 +89,7 @@ export function computeReadiness(input: ReadinessInput): ScoringOutput {
       score: round(c.score, 0),
     })),
     band: { label: band.label, lower: band.lower, upper: band.upper },
-    gates: evaluateGates(rubricAnswers, industry),
-    confidenceFlags: runConsistencyChecks(rubricAnswers, d, band.id),
+    gates: evaluateGates(rubricAnswers, industry, facts),
+    confidenceFlags: runConsistencyChecks(rubricAnswers, d, band.id, facts),
   };
 }

@@ -8,7 +8,7 @@
  * maximum option values summing to exactly 20.
  */
 
-import type { Dimension, DimensionId, Question } from './types';
+import type { Dimension, DimensionId, ImpactAssessmentStatus, Question } from './types';
 
 /** Methodology → The Six Dimensions. */
 export const dimensions = [
@@ -293,11 +293,16 @@ export const questionBank = [
     options: [
       { label: 'Undecided / no plan yet', points: 0 },
       { label: 'In-house only', points: 2 },
-      { label: 'Buy vendor tool only', points: 3 },
-      { label: 'In-house plus external expertise', points: 5 },
+      // v1.1, issue 8: was 3. MIT NANDA's primary report groups buying and co-developing with
+      // vendors as "Strategic Partnerships (Buy)", 66% successful deployment, vs 33% for fully
+      // in-house builds; a hybrid (internal team co-develops with a vendor) had insufficient data.
+      // So buying and partnering score alike (ruled 2026-09-29). Answers are stored as points,
+      // so two options worth 5 would be indistinguishable; they are merged into one option,
+      // which is also how the report defines its "Buy" group.
+      { label: 'Buy or partner: a vendor tool, or in-house plus external expertise', points: 5 },
     ],
     note:
-      "The partnered option scores highest on deliberate evidence: MIT's data showed 67% success for builds blending internal and external expertise against 22% for IT-only builds. This is the one question where the option ranking is counterintuitive and should carry a tooltip.",
+      "Why in-house only scores low: in MIT NANDA's 2025 study of generative-AI deployments (52 organizations interviewed), projects bought from or co-developed with external vendors reached successful deployment about twice as often as fully in-house builds (66% vs 33%). Buying and partnering therefore score the same. The study reports a correlation, not proof of cause.",
   },
 
   /* ---------------- D6 — Strategy & sponsorship ---------------- */
@@ -357,3 +362,25 @@ export const questionsByDimension: Readonly<Record<DimensionId, readonly Questio
 
 /** Maximum raw score per dimension. 20 for every dimension — asserted by the Stage 1 test. */
 export const MAX_DIMENSION_RAW = 20;
+
+/**
+ * v1.1, issue 9 — one UNSCORED question, shown on the D4 screen after the four scored ones.
+ * Leaving it unscored keeps the 4 × 5 = 20 structure and the calibration intact. It feeds
+ * gate G-U5 and consistency check C6 only. The tool does not perform an assessment and does
+ * not determine whether one is legally required; it narrows and flags.
+ */
+export const impactAssessmentQuestion = {
+  prompt: 'Has a privacy or AI impact assessment been completed for this process?',
+  options: [
+    { value: 'no-personal-data', label: 'No personal data involved' },
+    { value: 'no', label: 'No' },
+    { value: 'in-progress', label: 'In progress' },
+    { value: 'completed', label: 'Completed and current' },
+  ],
+  note:
+    'Not scored. A privacy impact assessment (PIA or DPIA) or an AI impact assessment is run before processing personal data, and in some cases the law requires one. Your answer only feeds a warning and a consistency check.',
+} as const satisfies {
+  readonly prompt: string;
+  readonly options: readonly { readonly value: ImpactAssessmentStatus; readonly label: string }[];
+  readonly note: string;
+};
