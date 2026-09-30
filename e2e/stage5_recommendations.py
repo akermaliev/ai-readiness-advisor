@@ -15,6 +15,11 @@
 import json, os, sys
 from playwright.sync_api import sync_playwright, expect
 
+def start(page):
+    """v1.2: every session starts on the landing page; acknowledge and start."""
+    page.get_by_test_id('acknowledge').check()
+    page.get_by_role('button', name='Start the assessment').click()
+
 URL, SHOTS = sys.argv[1], sys.argv[2]
 os.makedirs(SHOTS, exist_ok=True)
 KEY = 'sk-ant-e2e-DO-NOT-LEAK-0000'
@@ -73,9 +78,10 @@ def run(browser, scenario):
         route.fulfill(status=status, headers={**CORS, 'content-type': 'application/json'}, body=json.dumps(body))
     page.route('https://api.anthropic.com/**', handle)
     page.goto(URL)
+    start(page)
     page.get_by_role('button', name='Weak — regional retailer').click()
     page.get_by_role('button', name='See my assessment').click()
-    report_before = [s.inner_html() for s in page.locator('[data-testid=report] > section:not([data-testid=recommendations])').all()]
+    report_before = [s.inner_html() for s in page.locator('[data-testid=report] > section:not([data-testid=recommendations]):not([data-testid=save-report])').all()]
     page.get_by_label('Anthropic API key').fill(KEY)
     page.get_by_role('button', name='Generate recommendations').click()
     return ctx, page, seen, report_before
@@ -104,7 +110,7 @@ with sync_playwright() as p:
     check('Computed summary shown, labeled no model involved', 'no model involved' in summary_text.lower() and 'headline score is 26' in summary_text)
     check("Model's own narrative never rendered", MODEL_NARRATIVE not in page.inner_text('body') and 'process maturity' not in page.inner_text('body'))
     check('No repair details when the first reply was valid', page.get_by_test_id('reply-problems').count() == 0)
-    after = [s.inner_html() for s in page.locator('[data-testid=report] > section:not([data-testid=recommendations])').all()]
+    after = [s.inner_html() for s in page.locator('[data-testid=report] > section:not([data-testid=recommendations]):not([data-testid=save-report])').all()]
     check(f'Deterministic report unchanged by recommendations ({len(before)} sections compared)', before == after and len(before) >= 5)
     h = seen['headers'] or {}
     check('Exactly one API call', seen['api_calls'] == 1)
@@ -128,6 +134,7 @@ with sync_playwright() as p:
     check('Key not rendered anywhere in page text', KEY not in page.inner_text('body'))
     page.screenshot(path=f'{SHOTS}/4-live-gate-violating.png', full_page=True)
     page.reload()
+    start(page)
     page.get_by_role('button', name='Weak — regional retailer').click()
     page.get_by_role('button', name='See my assessment').click()
     check('Key gone after refresh', page.get_by_label('Anthropic API key').input_value() == '')
@@ -165,7 +172,7 @@ with sync_playwright() as p:
     expect(page.get_by_text('The request failed')).to_be_visible()
     check('401: no retry', seen['api_calls'] == 1)
     check('Error shows API message', page.get_by_text('invalid x-api-key (HTTP 401)', exact=False).count() == 1)
-    after = [s.inner_html() for s in page.locator('[data-testid=report] > section:not([data-testid=recommendations])').all()]
+    after = [s.inner_html() for s in page.locator('[data-testid=report] > section:not([data-testid=recommendations]):not([data-testid=save-report])').all()]
     check('Report intact after API error', before == after)
     page.get_by_role('button', name='Show pre-written examples (no key)').click()
     check('Fallback reachable after an error', page.get_by_text('Pre-written examples for Retail & E-commerce').count() == 1)
@@ -174,6 +181,7 @@ with sync_playwright() as p:
     # ---------- 4. no key, offline: fallback in one click ----------
     ctx = browser.new_context(viewport={'width': 900, 'height': 1000}); page = ctx.new_page()
     page.goto(URL)
+    start(page)
     page.get_by_role('button', name='Weak — regional retailer').click()
     ctx.set_offline(True)
     reqs = []; page.on('request', lambda r: reqs.append(r.url))

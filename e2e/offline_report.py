@@ -13,6 +13,11 @@ import os
 import sys
 from playwright.sync_api import sync_playwright, expect
 
+def start(page):
+    """v1.2: every session starts on the landing page; acknowledge and start."""
+    page.get_by_test_id('acknowledge').check()
+    page.get_by_role('button', name='Start the assessment').click()
+
 URL = sys.argv[1]
 SHOTS = sys.argv[2]
 os.makedirs(SHOTS, exist_ok=True)
@@ -43,6 +48,7 @@ with sync_playwright() as p:
     page.on('pageerror', lambda e: console_errors.append(str(e)))
 
     page.goto(URL)
+    start(page)
     cont = page.get_by_role('button', name='Continue')
     check('Continue disabled before profile answered', cont.is_disabled())
     page.get_by_label('Manufacturing & Logistics').check()
@@ -91,7 +97,7 @@ with sync_playwright() as p:
                      (4, 'Gates'), (6, 'How much the weights matter')]:
         check(f'Section {n} rendered: {title}', page.get_by_role('heading', name=title).is_visible())
     # The deterministic report's own sections; the optional Recommendations section below it is not one.
-    headings = [h.inner_text() for h in page.locator('section:not([data-testid=recommendations]) h2').all()]
+    headings = [h.inner_text() for h in page.locator('section:not([data-testid=recommendations]):not([data-testid=save-report]) h2').all()]
     check(f'Section order matches tech doc: {headings}', headings == [
         'Readiness band and score', 'Where the score comes from', 'Diagnostics', 'Gates', 'How much the weights matter'])
     check('6 dimension rows', page.locator('section').nth(1).locator('li').count() == 6)
@@ -109,20 +115,20 @@ with sync_playwright() as p:
 
     # dark-mode render for visual QA
     dark = browser.new_context(viewport={'width': 900, 'height': 1000}, color_scheme='dark')
-    dp = dark.new_page(); dp.goto(URL)
+    dp = dark.new_page(); dp.goto(URL); start(dp)
     dp.get_by_role('button', name='Weak — regional retailer').click()
     dp.get_by_role('button', name='See my assessment').click()
     dp.screenshot(path=f'{SHOTS}/3-report-weak-dark.png', full_page=True)
 
     # strong persona: the flat fix-first ranking (+2, +1, +1) is qualified (issue 2)
-    sp = browser.new_context(viewport={'width': 900, 'height': 1000}).new_page(); sp.goto(URL)
+    sp = browser.new_context(viewport={'width': 900, 'height': 1000}).new_page(); sp.goto(URL); start(sp)
     sp.get_by_role('button', name='Strong — regional bank operations').click()
     sp.get_by_role('button', name='See my assessment').click()
     check('Strong persona: flat ranking qualified', sp.get_by_test_id('flat-sensitivity').count() == 1)
     check('Median walk: no flat qualifier (+9 top move)', page.get_by_test_id('flat-sensitivity').count() == 0)
 
     # spec ruling 1: a dimension at 0 is named, and the headline is called floor-dominated
-    zp = browser.new_context(viewport={'width': 900, 'height': 1000}).new_page(); zp.goto(URL)
+    zp = browser.new_context(viewport={'width': 900, 'height': 1000}).new_page(); zp.goto(URL); start(zp)
     zp.get_by_role('button', name='Weak — regional retailer').click()
     zp.get_by_role('button', name='Back to the rubric').click()   # D6
     zp.get_by_role('button', name='Back').click()                 # D5

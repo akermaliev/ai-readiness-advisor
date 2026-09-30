@@ -1,7 +1,7 @@
 {
   "name": "aiira",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.2.0",
   "type": "module",
   "description": "AI Integration Readiness Advisor: deterministic AI-readiness scoring with a bring-your-own-key recommendation layer",
   "scripts": {
@@ -13,6 +13,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "jspdf": "^4.2.1",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },

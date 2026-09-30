@@ -6,6 +6,7 @@ import { createAnthropicTransport, DEFAULT_MODEL, MODEL_OPTIONS, type ReplyMeta 
 import { areaLabel, untilText } from './display';
 import { buildFallbackRecommendations } from './fallback';
 import type { DisplayBlocked, DisplayUseCase, VerifiedRecommendations } from './gateVerification';
+import type { PdfRecommendations } from '../pdf/reportPdf';
 import type { SelectedAnswers } from './prompt';
 import { requestRecommendations } from './recommend';
 
@@ -27,22 +28,31 @@ type State =
  * The API key lives only in this component's state: not persisted, not logged, sent only
  * to api.anthropic.com, gone on refresh or "Start over".
  */
-export function Recommendations({ output, problem, answers }: { output: ScoringOutput; problem: ProblemStatement; answers: SelectedAnswers }) {
+export function Recommendations({ output, problem, answers, onResult }: {
+  output: ScoringOutput; problem: ProblemStatement; answers: SelectedAnswers;
+  /** Reports what is on screen, for the PDF (v1.2 C2). Never carries the key or reply internals. */
+  onResult?: (r: PdfRecommendations | null) => void;
+}) {
   const [apiKey, setApiKey] = useState('');
   const [model, setModel] = useState<string>(DEFAULT_MODEL);
   const [state, setState] = useState<State>({ kind: 'idle' });
 
-  const showFallback = (reason: string | null, problems: ReplyProblems | null = null, run: RunDetails | null = null) =>
-    setState({ kind: 'fallback', result: buildFallbackRecommendations(output, problem), reason, problems, run });
+  const showFallback = (reason: string | null, problems: ReplyProblems | null = null, run: RunDetails | null = null) => {
+    const result = buildFallbackRecommendations(output, problem);
+    setState({ kind: 'fallback', result, reason, problems, run });
+    onResult?.({ kind: 'fallback', generatedAt: new Date(), result });
+  };
 
   const generate = async () => {
     if (apiKey.trim() === '') return;
     setState({ kind: 'loading' });
+    onResult?.(null);
     const started = performance.now();
     const outcome = await requestRecommendations({ output, problem, answers, model, transport: createAnthropicTransport(apiKey.trim()) });
     const elapsedMs = Math.round(performance.now() - started);
     if (outcome.kind === 'live') {
       setState({ kind: 'live', result: outcome.result, model, attempts: outcome.attempts, repairErrors: outcome.repairErrors, run: { model, replies: outcome.replies, elapsedMs } });
+      onResult?.({ kind: 'live', model, generatedAt: new Date(), result: outcome.result });
     } else if (outcome.kind === 'invalid-response') {
       showFallback('The model\'s reply did not follow the required format and rules, even after one retry, so pre-written examples are shown instead.',
         { first: outcome.errors, retry: outcome.retryErrors }, { model, replies: outcome.replies, elapsedMs });
