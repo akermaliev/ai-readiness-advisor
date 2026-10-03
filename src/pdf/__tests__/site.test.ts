@@ -3,6 +3,7 @@ import { calibrationPersonas } from '../../data/calibrationPersonas';
 import { computeReadiness } from '../../engine';
 import { viewFromHash } from '../../landing/useHashView';
 import { buildFallbackRecommendations } from '../../model/fallback';
+import { buildRoadmapView } from '../../model/roadmapView';
 import { APP_VERSION, LEGAL_TEXT_REVIEWED } from '../../site';
 import { headerCsp, metaCsp, SECURITY_HEADERS } from '../../../security-policy';
 import { buildReportPdf, pdfFileName, pdfText } from '../reportPdf';
@@ -32,8 +33,9 @@ describe('v1.2 C2 — PDF helpers', () => {
       const o = computeReadiness(p.input);
       const bare = buildReportPdf({ output: o, companyName: null, date: new Date(), recommendations: null });
       expect(bare.getNumberOfPages()).toBeGreaterThanOrEqual(1);
-      const recs = buildFallbackRecommendations(o, { primaryBottleneck: 'forecasting-planning', targetFunction: 'sales-marketing' });
-      const withRecs = buildReportPdf({ output: o, companyName: 'X', date: new Date(), recommendations: { kind: 'fallback', generatedAt: new Date(), result: recs } });
+      const recs = buildFallbackRecommendations(o, { primaryBottleneck: 'forecasting-planning', targetFunction: 'sales-marketing' }, p.input);
+      const roadmap = buildRoadmapView(recs, o, p.input);
+      const withRecs = buildReportPdf({ output: o, companyName: 'X', date: new Date(), recommendations: { kind: 'fallback', generatedAt: new Date(), result: recs, roadmap } });
       expect(withRecs.getNumberOfPages()).toBeGreaterThan(bare.getNumberOfPages() - 1);
       expect(withRecs.output()).toContain('%PDF-');
     }

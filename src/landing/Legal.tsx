@@ -44,8 +44,10 @@ export function TermsView() {
       <section>
         <h2>No data collection</h2>
         <p>
-          The site does not store or transmit your answers. The score and report are computed in your browser and are gone
-          when you refresh or close the page. See the <a className="text-accent underline" href="#privacy">Privacy</a> page.
+          The site does not store your answers or send them to us. The score and report are computed in your browser and are
+          gone when you refresh or close the page. If you add your own API key, your answers and scores are sent from your
+          browser to Anthropic to generate recommendations, and nowhere else. See the{' '}
+          <a className="text-accent underline" href="#privacy">Privacy</a> page.
         </p>
       </section>
       <section>
@@ -87,7 +89,7 @@ export function PrivacyView() {
         <h2>If you add an API key</h2>
         <ul>
           <li>Your browser sends the request straight to Anthropic&rsquo;s API (api.anthropic.com). Nothing passes through this site.</li>
-          <li>The request contains your key (as a header), your scores, your selected answers and what you said you want from AI. Anthropic handles it under <a className="text-accent underline" href="https://www.anthropic.com/legal/privacy" target="_blank" rel="noopener noreferrer">its own privacy policy</a>.</li>
+          <li>The request contains your key (as a header), your scores, your selected answers and what you said you want from AI. Anthropic handles it under the terms of your Anthropic API account and <a className="text-accent underline" href="https://www.anthropic.com/legal/privacy" target="_blank" rel="noopener noreferrer">its privacy policy</a>.</li>
           <li>The key is never stored, logged or written into the PDF.</li>
         </ul>
       </section>

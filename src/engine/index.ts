@@ -8,3 +8,4 @@ export {
 export { evaluateGates, blockedCategories, type GovernanceFacts } from './gateEvaluation';
 export { runConsistencyChecks } from './consistency';
 export { assignBand, assignCompensationBand } from './banding';
+export { improvementPath, type ImprovementPath, type ImprovementStep } from './improvementPath';

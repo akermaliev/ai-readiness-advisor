@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import type { ProblemStatement, ScoringOutput } from '../data/types';
+import type { ProblemStatement, ReadinessInput, ScoringOutput } from '../data/types';
 import { dimensionLabel, dimensionName, industryLabel, categoryLabel, gateEffectText } from '../report/lookups';
 import { Button, Callout, StatusIcon, StatusLabel, type Tone } from '../ui/primitives';
 import { createAnthropicTransport, DEFAULT_MODEL, MODEL_OPTIONS, type ReplyMeta } from './client';
@@ -7,8 +7,8 @@ import { areaLabel, untilText } from './display';
 import { buildFallbackRecommendations } from './fallback';
 import type { DisplayBlocked, DisplayUseCase, VerifiedRecommendations } from './gateVerification';
 import type { PdfRecommendations } from '../pdf/reportPdf';
-import type { SelectedAnswers } from './prompt';
 import { requestRecommendations } from './recommend';
+import { buildRoadmapView, type RoadmapView } from './roadmapView';
 
 /** Validation errors from the model's replies, shown on the page (Fix 3), never logged. */
 interface ReplyProblems { readonly first: readonly string[]; readonly retry: readonly string[] }
@@ -19,8 +19,8 @@ interface RunDetails { readonly model: string; readonly replies: readonly ReplyM
 type State =
   | { kind: 'idle' }
   | { kind: 'loading' }
-  | { kind: 'live'; result: VerifiedRecommendations; model: string; attempts: 1 | 2; repairErrors: readonly string[]; run: RunDetails }
-  | { kind: 'fallback'; result: VerifiedRecommendations; reason: string | null; problems: ReplyProblems | null; run: RunDetails | null }
+  | { kind: 'live'; result: VerifiedRecommendations; roadmap: RoadmapView; model: string; attempts: 1 | 2; repairErrors: readonly string[]; run: RunDetails }
+  | { kind: 'fallback'; result: VerifiedRecommendations; roadmap: RoadmapView; reason: string | null; problems: ReplyProblems | null; run: RunDetails | null }
   | { kind: 'error'; message: string };
 
 /**
@@ -29,7 +29,8 @@ type State =
  * to api.anthropic.com, gone on refresh or "Start over".
  */
 export function Recommendations({ output, problem, answers, onResult }: {
-  output: ScoringOutput; problem: ProblemStatement; answers: SelectedAnswers;
+  /** The full input: the selected answers go to the prompt (A4); the roadmap's answer changes are computed from it (v1.3). */
+  output: ScoringOutput; problem: ProblemStatement; answers: ReadinessInput;
   /** Reports what is on screen, for the PDF (v1.2 C2). Never carries the key or reply internals. */
   onResult?: (r: PdfRecommendations | null) => void;
 }) {
@@ -38,9 +39,10 @@ export function Recommendations({ output, problem, answers, onResult }: {
   const [state, setState] = useState<State>({ kind: 'idle' });
 
   const showFallback = (reason: string | null, problems: ReplyProblems | null = null, run: RunDetails | null = null) => {
-    const result = buildFallbackRecommendations(output, problem);
-    setState({ kind: 'fallback', result, reason, problems, run });
-    onResult?.({ kind: 'fallback', generatedAt: new Date(), result });
+    const result = buildFallbackRecommendations(output, problem, answers);
+    const roadmap = buildRoadmapView(result, output, answers);
+    setState({ kind: 'fallback', result, roadmap, reason, problems, run });
+    onResult?.({ kind: 'fallback', generatedAt: new Date(), result, roadmap });
   };
 
   const generate = async () => {
@@ -51,8 +53,9 @@ export function Recommendations({ output, problem, answers, onResult }: {
     const outcome = await requestRecommendations({ output, problem, answers, model, transport: createAnthropicTransport(apiKey.trim()) });
     const elapsedMs = Math.round(performance.now() - started);
     if (outcome.kind === 'live') {
-      setState({ kind: 'live', result: outcome.result, model, attempts: outcome.attempts, repairErrors: outcome.repairErrors, run: { model, replies: outcome.replies, elapsedMs } });
-      onResult?.({ kind: 'live', model, generatedAt: new Date(), result: outcome.result });
+      const roadmap = buildRoadmapView(outcome.result, output, answers);
+      setState({ kind: 'live', result: outcome.result, roadmap, model, attempts: outcome.attempts, repairErrors: outcome.repairErrors, run: { model, replies: outcome.replies, elapsedMs } });
+      onResult?.({ kind: 'live', model, generatedAt: new Date(), result: outcome.result, roadmap });
     } else if (outcome.kind === 'invalid-response') {
       showFallback('The model\'s reply did not follow the required format and rules, even after one retry, so pre-written examples are shown instead.',
         { first: outcome.errors, retry: outcome.retryErrors }, { model, replies: outcome.replies, elapsedMs });
@@ -106,7 +109,7 @@ export function Recommendations({ output, problem, answers, onResult }: {
           </Callout>
         )}
         {state.kind === 'live' && (
-          <RecommendationsView result={state.result} banner={
+          <RecommendationsView result={state.result} roadmap={state.roadmap} banner={
             <>
               <Callout tone="info" title={`Generated by ${state.model} for your answers`}>
                 {state.attempts === 2 && 'The first reply was unusable and was replaced on a second attempt. '}
@@ -120,7 +123,7 @@ export function Recommendations({ output, problem, answers, onResult }: {
           } />
         )}
         {state.kind === 'fallback' && (
-          <RecommendationsView result={state.result} banner={
+          <RecommendationsView result={state.result} roadmap={state.roadmap} banner={
             <>
               <Callout tone="warning" title={`Pre-written examples for ${industryLabel(output.industry)}, not generated for your answers`}>
                 {state.reason !== null && <>{state.reason} </>}
@@ -158,9 +161,9 @@ function UseCaseCard({ item }: { item: DisplayUseCase }) {
       <p className="mt-2 text-sm text-ink"><span className="font-medium">Expected outcome:</span> {u.expectedOutcome}</p>
       {item.tradeoff !== null && <p className="mt-2 rounded-md bg-intent px-3 py-2 text-sm text-ink"><span className="font-medium">The tradeoff:</span> {item.tradeoff}</p>}
       <div className="mt-3 flex flex-wrap items-center gap-1.5" data-testid="use-case-categories">
-        <span className="text-xs font-medium text-ink">Gated kinds of work:</span>
+        <span className="text-xs font-medium text-ink">Kinds of work the gates check:</span>
         {u.categories.length === 0
-          ? <span className="text-xs text-ink-2">touches no gated kind of work</span>
+          ? <span className="text-xs text-ink-2">none</span>
           : u.categories.map((c) => (
             <span key={c} className="rounded border border-line bg-surface px-1.5 py-0.5 text-xs text-ink-2" title={c}>{categoryLabel(c)}</span>
           ))}
@@ -187,7 +190,7 @@ const BLOCKED_SOURCE: Readonly<Record<DisplayBlocked['source'], string>> = {
   fixture: 'Back-office alternative, blocked for now',
 };
 
-function RecommendationsView({ result, banner }: { result: VerifiedRecommendations; banner: ReactNode }) {
+function RecommendationsView({ result, roadmap, banner }: { result: VerifiedRecommendations; roadmap: RoadmapView; banner: ReactNode }) {
   return (
     <div className="space-y-5">
       {banner}
@@ -198,32 +201,13 @@ function RecommendationsView({ result, banner }: { result: VerifiedRecommendatio
         {result.summary.imbalanceNote !== null && <p className="mt-2 text-sm text-ink-2">{result.summary.imbalanceNote}</p>}
       </div>
 
+      <RoadmapSteps roadmap={roadmap} pilotDependsOnFixFirst={result.pilotDependsOnFixFirst} />
+
       <div>
         <h3 className="text-sm font-semibold text-ink">Use cases</h3>
         {result.useCases.length === 0
           ? <p className="mt-2 text-sm text-ink-2">No suggestion survived the gate check. See what is blocked and what would unblock it below.</p>
           : <ul className="mt-2 space-y-3">{result.useCases.map((u) => <UseCaseCard key={`${u.source}-${u.useCase.title}`} item={u} />)}</ul>}
-      </div>
-
-      <div>
-        <h3 className="text-sm font-semibold text-ink">Roadmap</h3>
-        <div className="mt-2 space-y-2 text-sm">
-          {result.roadmap.prerequisite !== null && <p className="text-ink"><span className="font-medium">First, close this gap:</span> {result.roadmap.prerequisite}</p>}
-          {result.pilotBlocked
-            ? <Callout tone="critical" title={`The suggested pilot, "${result.roadmap.pilotFirst.useCaseTitle}", is blocked by a gate`}>It was removed by the code check; see below for what would unblock it.</Callout>
-            : <p className="text-ink"><span className="font-medium">Pilot first:</span> {result.roadmap.pilotFirst.useCaseTitle}. <span className="text-ink-2">{result.roadmap.pilotFirst.rationale}</span></p>}
-          {result.pilotDependsOnFixFirst !== null && (
-            <div data-testid="pilot-fix-first-note">
-              <Callout tone="warning" title={`The suggested pilot depends on ${dimensionLabel(result.pilotDependsOnFixFirst)}, the dimension to fix first.`}>
-                Flagged by the code check, not removed. Starting here means piloting on your weakest link; consider closing
-                that gap first or piloting a use case that depends on a different dimension.
-              </Callout>
-            </div>
-          )}
-          {result.roadmap.defer.length > 0 && (
-            <ul className="space-y-1 text-ink-2">{result.roadmap.defer.map((d) => <li key={d.useCaseTitle} data-testid="deferral">Defer <span className="text-ink">{d.useCaseTitle}</span> until {untilText(d.until)}.</li>)}</ul>
-          )}
-        </div>
       </div>
 
       {result.blocked.length > 0 && (
@@ -245,6 +229,104 @@ function RecommendationsView({ result, banner }: { result: VerifiedRecommendatio
           </ul>
         </div>
       )}
+    </div>
+  );
+}
+
+/** One numbered roadmap step. */
+function Step({ n, title, testId, children }: { n: number; title: ReactNode; testId: string; children?: ReactNode }) {
+  return (
+    <li className="grid grid-cols-[1.75rem_1fr] gap-x-3" data-testid={testId}>
+      <span className="flex size-7 items-center justify-center rounded-full bg-accent-soft text-sm font-semibold text-ink" aria-hidden="true">{n}</span>
+      <div className="min-w-0">
+        <h4 className="pt-0.5 font-semibold text-ink"><span className="sr-only">Step {n}: </span>{title}</h4>
+        <div className="mt-1.5 space-y-2 text-sm">{children}</div>
+      </div>
+    </li>
+  );
+}
+
+/**
+ * v1.3: the roadmap first, as numbered steps; the use cases below are its supporting detail.
+ * Step 1's answer changes and every number in it come from the engine, not the model.
+ */
+function RoadmapSteps({ roadmap, pilotDependsOnFixFirst }: { roadmap: RoadmapView; pilotDependsOnFixFirst: VerifiedRecommendations['pilotDependsOnFixFirst'] }) {
+  const { step1, step2, step3 } = roadmap;
+  const path = step1.path;
+  const step1Title = step1.kind === 'required' ? 'Close this gap first' : step1.kind === 'optional' ? 'Optional groundwork' : 'Nothing to close first';
+  return (
+    <div className="rounded-lg border border-line bg-surface p-4 sm:p-5" data-testid="roadmap">
+      <h3 className="text-base font-semibold text-ink">Roadmap</h3>
+      <p className="mt-0.5 text-xs text-ink-3">The order to do things in. The use cases it names are described below.</p>
+      <ol className="mt-4 space-y-5">
+        <Step n={1} title={step1Title} testId="roadmap-step-1">
+          {step1.text !== null && <p className="text-ink">{step1.text}</p>}
+          {step1.note !== null && <p className="text-ink-2">{step1.note}</p>}
+          {path !== null && path.steps.length > 0 && (
+            <div data-testid="improvement-path">
+              <p className="text-xs font-medium uppercase tracking-wide text-ink-3">One way to get there, from your own answers · computed, no model involved</p>
+              <ol className="mt-1.5 list-decimal space-y-1.5 pl-5 text-ink-2">
+                {path.steps.map((s) => (
+                  <li key={s.questionId}>
+                    <span className="text-ink">Q{s.questionId} {s.question}</span>{' '}
+                    From &ldquo;{s.fromLabel}&rdquo; to &ldquo;{s.toLabel}&rdquo;.{' '}
+                    <span className="tabular-nums">{dimensionLabel(path.dimensionId)} {s.dimensionAfter}/100, headline {s.headlineAfter}.</span>
+                    {s.gatesCleared.length > 0 && <> Clears {s.gatesCleared.join(', ')}.</>}
+                  </li>
+                ))}
+              </ol>
+              <p className="mt-1.5 text-xs text-ink-3 tabular-nums">
+                {path.reachesTarget
+                  ? `Together: ${dimensionLabel(path.dimensionId)} from ${path.dimensionBefore} to ${path.steps[path.steps.length - 1]?.dimensionAfter ?? path.dimensionBefore}, headline from ${path.headlineBefore} to ${path.steps[path.steps.length - 1]?.headlineAfter ?? path.headlineBefore}. Each change raises one answer as little as possible; other routes exist.`
+                  : `Even with every answer in ${dimensionLabel(path.dimensionId)} at its top option, it stays below ${path.target}.`}
+              </p>
+            </div>
+          )}
+        </Step>
+
+        <Step n={2} title={step2.blocked ? 'Pilot' : <>Pilot: {step2.title}</>} testId="roadmap-step-2">
+          {step2.blocked
+            ? <Callout tone="critical" title={`The suggested pilot, "${step2.title}", is blocked by a gate`}>It was removed by the code check; see below for what would unblock it.</Callout>
+            : <>
+              <p className="text-ink-2">{step2.rationale}</p>
+              {step2.timing === 'alongside' && step1.dimension !== null && (
+                <p className="text-ink" data-testid="pilot-timing">Can start now, alongside step 1: it does not depend on {dimensionLabel(step1.dimension)}.</p>
+              )}
+              {step2.goalNote !== null && (
+                <div data-testid="goal-note"><Callout tone="info" title="Why not start with your stated goal">{step2.goalNote}</Callout></div>
+              )}
+              <dl className="grid gap-x-3 gap-y-1 sm:grid-cols-[auto_1fr]">
+                <dt className="font-medium text-ink">How to tell it worked</dt><dd className="text-ink-2" data-testid="pilot-success">{step2.successMeasure}</dd>
+                <dt className="font-medium text-ink">When to stop or rethink</dt><dd className="text-ink-2" data-testid="pilot-stop">{step2.stopCondition}</dd>
+              </dl>
+            </>}
+          {pilotDependsOnFixFirst !== null && (
+            <div data-testid="pilot-fix-first-note">
+              <Callout tone="warning" title={`The suggested pilot depends on ${dimensionLabel(pilotDependsOnFixFirst)}, the dimension to fix first.`}>
+                Flagged by the code check, not removed. Starting here means piloting on your weakest link; consider closing
+                that gap first or piloting a use case that depends on a different dimension.
+              </Callout>
+            </div>
+          )}
+        </Step>
+
+        {step3.length > 0 && (
+          <Step n={3} title="Later" testId="roadmap-step-3">
+            <ul className="space-y-2">
+              {step3.map((d) => (
+                <li key={d.title}>
+                  <p className="text-ink-2" data-testid="deferral">Defer <span className="text-ink">{d.title}</span> until {untilText(d.until)}.</p>
+                  {d.unlock.length > 0 && (
+                    <p className="mt-0.5 text-xs text-ink-3" data-testid="deferral-unlock">
+                      Waits on: {d.unlock.map((u) => `Q${u.questionId} (now: \u201c${u.current}\u201d)`).join('; ')}
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </Step>
+        )}
+      </ol>
     </div>
   );
 }

@@ -40,17 +40,18 @@ GATE_VIOLATING = {
   'useCases': [uc('Internal knowledge assistant', ['retrieval-over-internal-content']),
                uc('Email personalization', ['personalization-targeting']),
                {**uc('Weekly sales report drafting', []), 'dependsOnDimension': 'D3'}],
-  'roadmap': {'pilotFirst': {'useCaseTitle': 'Internal knowledge assistant', 'rationale': 'Quick win.'},
+  'roadmap': {'pilotFirst': {'useCaseTitle': 'Internal knowledge assistant', 'rationale': 'Quick win.', 'successMeasure': 'Hours spent on the weekly report, against a baseline taken before the pilot.', 'stopCondition': 'No time saved after a quarter.', 'goalNote': None},
               # The weak retailer's fix-first dimension is D1; the prerequisite must name it (Fix 1).
               'prerequisite': 'Close the gap in D1 Data maturity & accessibility first.',
-              'defer': [{'useCaseTitle': 'Email personalization', 'until': 'a written consumer-data policy exists.'}]},
+              'defer': [{'useCaseTitle': 'Email personalization', 'until': 'a written consumer-data policy exists.', 'unlockAnswers': ['1.2']}]},
   'blockedAcknowledged': []}
 # Repaired scenario: a valid reply whose pilot depends on D1, the fix-first dimension.
 VALID_PILOT_ON_FIX_FIRST = {
   'scoreNarrative': MODEL_NARRATIVE, 'imbalanceNote': None,
   'useCases': [uc('Email personalization', ['personalization-targeting']),
                {**uc('Weekly sales report drafting', []), 'dependsOnDimension': 'D3'}],
-  'roadmap': {'pilotFirst': {'useCaseTitle': 'Email personalization', 'rationale': 'Uses existing data.'},
+  'roadmap': {'pilotFirst': {'useCaseTitle': 'Email personalization', 'rationale': 'Uses existing data.', 'successMeasure': 'Click-through against last quarter.', 'stopCondition': 'No lift after two campaigns.',
+                             'goalNote': 'The weekly report addresses the stated goal more directly, but needs D3 Process definition first.'},
               'prerequisite': 'Close the gap in D1 Data maturity & accessibility first.', 'defer': []},
   'blockedAcknowledged': []}
 MALFORMED = 'Here you go! {"scoreNarrative": "x", "useCases": [ }'
@@ -105,7 +106,13 @@ with sync_playwright() as p:
     check(f'Every use-case card shows its categories ({len(cards)} cards)', len(cards) >= 2 and all(c.get_by_test_id('use-case-categories').count() == 1 for c in cards))
     check('Tagged card shows its category label', page.get_by_test_id('use-case').filter(has_text='Email personalization').get_by_text('Personalization or targeting').count() == 1)
     check('Known Area id shown as its label (v1.2 A6)', 'Sales & marketing' in page.get_by_test_id('use-case-area').first.inner_text())
-    check('Untagged card says it touches no gated kind of work', page.get_by_test_id('use-case').filter(has_text='Weekly sales report drafting').get_by_text('touches no gated kind of work').count() == 1)
+    check('Untagged card says no gate checks it', page.get_by_test_id('use-case').filter(has_text='Weekly sales report drafting').get_by_test_id('use-case-categories').inner_text().strip().endswith('none'))
+    rm = page.get_by_test_id('roadmap')
+    order = page.evaluate("() => { const r = document.querySelector('[data-testid=roadmap]'); const u = document.querySelector('[data-testid=use-case]'); return !!(r && u && (r.compareDocumentPosition(u) & Node.DOCUMENT_POSITION_FOLLOWING)); }")
+    check('Roadmap comes before the use cases (v1.3)', rm.count() == 1 and order)
+    path = page.get_by_test_id('improvement-path')
+    check('Step 1 lists answer changes computed from the answers, ending at the sensitivity target (26 -> 33)', path.count() == 1 and 'no model involved' in path.inner_text().lower() and 'headline from 26 to 33' in path.inner_text())
+    check('Step 3 shows what each deferral waits on, with the current answer', page.get_by_test_id('deferral-unlock').filter(has_text='Q1.2').count() == 1)
     summary_text = page.get_by_test_id('score-summary').inner_text()
     check('Computed summary shown, labeled no model involved', 'no model involved' in summary_text.lower() and 'headline score is 26' in summary_text)
     check("Model's own narrative never rendered", MODEL_NARRATIVE not in page.inner_text('body') and 'process maturity' not in page.inner_text('body'))
@@ -151,6 +158,9 @@ with sync_playwright() as p:
     check('Repair details name the specific error', 'reply contains no JSON object' in details.inner_text() or 'not valid JSON' in details.inner_text())
     check('Pilot-on-fix-first note shown, naming D1', page.get_by_test_id('pilot-fix-first-note').filter(has_text='D1 Data maturity & accessibility').count() == 1)
     check('Flagged pilot kept, not dropped', page.get_by_test_id('use-case').filter(has_text='Email personalization').count() == 1)
+    check('Pilot shows how to tell it worked and when to stop (v1.3)', 'Click-through' in page.get_by_test_id('pilot-success').inner_text() and 'No lift' in page.get_by_test_id('pilot-stop').inner_text())
+    check('Goal note shown when the pilot is not the stated goal (v1.3)', page.get_by_test_id('goal-note').filter(has_text='stated goal').count() == 1)
+    check('A pilot that depends on step 1 is not called "can start now"', page.get_by_test_id('pilot-timing').count() == 0)
     check('Repair errors do not contain the key', KEY not in page.inner_text('body'))
     page.screenshot(path=f'{SHOTS}/6-live-repaired.png', full_page=True)
     ctx.close()

@@ -14,10 +14,10 @@
  * Word limits and gate rules stay prompt instructions and a code check respectively.
  *
  * API constraints respected here: every object has `additionalProperties: false` and lists
- * every property as required (no optional parameters); two union-typed fields (well under 16).
+ * every property as required (no optional parameters); three union-typed fields (well under 16).
  */
 import {
-  DIMENSION_IDS, GATE_IDS, GOVERNANCE_FLAG_TYPES, IMPLEMENTATION_RISK, OUTCOME_CONFIDENCE, USE_CASE_CATEGORIES,
+  DIMENSION_IDS, GATE_IDS, GOVERNANCE_FLAG_TYPES, IMPLEMENTATION_RISK, OUTCOME_CONFIDENCE, QUESTION_IDS, USE_CASE_CATEGORIES,
 } from './vocabulary';
 
 type JsonSchema = Readonly<Record<string, unknown>>;
@@ -49,9 +49,10 @@ export const MODEL_RESPONSE_SCHEMA: JsonSchema = object({
   imbalanceNote: nullableStr,
   useCases: arrayOf(useCase),
   roadmap: object({
-    pilotFirst: object({ useCaseTitle: str, rationale: str }),
+    // v1.3: success measure, stop condition, goal note; deferrals name the answers that unlock them.
+    pilotFirst: object({ useCaseTitle: str, rationale: str, successMeasure: str, stopCondition: str, goalNote: nullableStr }),
     prerequisite: nullableStr,
-    defer: arrayOf(object({ useCaseTitle: str, until: str })),
+    defer: arrayOf(object({ useCaseTitle: str, until: str, unlockAnswers: arrayOf(enumOf(QUESTION_IDS)) })),
   }),
   blockedAcknowledged: arrayOf(object({
     title: str,

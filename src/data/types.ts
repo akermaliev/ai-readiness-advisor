@@ -485,11 +485,25 @@ export interface RoadmapPilot {
   readonly useCaseTitle: string;
   /** ≤ 30 words. */
   readonly rationale: string;
+  /** v1.3: ≤ 25 words. What to measure, against a baseline taken before the pilot, to call it a success. */
+  readonly successMeasure: string;
+  /** v1.3: ≤ 25 words. The result that means stopping or rethinking the pilot. */
+  readonly stopCondition: string;
+  /**
+   * v1.3: one sentence, present only when the pilot is not the use case that most directly
+   * addresses the problem statement: why the company's stated goal comes later. Else null.
+   */
+  readonly goalNote: string | null;
 }
 
 export interface RoadmapDeferral {
   readonly useCaseTitle: string;
   readonly until: string;
+  /**
+   * v1.3: the questions whose answers must improve before this use case starts. Each must be
+   * below its top option (checked in code). Empty when the deferral waits on another use case.
+   */
+  readonly unlockAnswers: readonly QuestionId[];
 }
 
 export interface Roadmap {

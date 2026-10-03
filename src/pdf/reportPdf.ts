@@ -15,38 +15,26 @@ import { jsPDF } from 'jspdf';
 import { SENSITIVITY_TARGET } from '../data/bands';
 import type { GateResult, ScoringOutput } from '../data/types';
 import type { VerifiedRecommendations } from '../model/gateVerification';
+import type { RoadmapView } from '../model/roadmapView';
 import { areaLabel, untilText } from '../model/display';
 import { isFlatSensitivity } from '../model/summary';
 import {
   bandFraming, categoryLabel, compensationText, dimensionLabel, dimensionName, gateEffectText, industryLabel, industryRationale, sizeLabel,
 } from '../report/lookups';
 import { APP_VERSION } from '../site';
+import { pdfText } from './pdfText';
+
+export { pdfText } from './pdfText';
 
 export type PdfRecommendations =
-  | { readonly kind: 'live'; readonly model: string; readonly generatedAt: Date; readonly result: VerifiedRecommendations }
-  | { readonly kind: 'fallback'; readonly generatedAt: Date; readonly result: VerifiedRecommendations };
+  | { readonly kind: 'live'; readonly model: string; readonly generatedAt: Date; readonly result: VerifiedRecommendations; readonly roadmap: RoadmapView }
+  | { readonly kind: 'fallback'; readonly generatedAt: Date; readonly result: VerifiedRecommendations; readonly roadmap: RoadmapView };
 
 export interface PdfInput {
   readonly output: ScoringOutput;
   readonly companyName: string | null;
   readonly date: Date;
   readonly recommendations: PdfRecommendations | null;
-}
-
-const MAP: Readonly<Record<string, string>> = {
-  'σ': 'sigma', 'Δ': 'delta', '→': '->', '←': '<-', '≥': '>=', '≤': '<=', '−': '-',
-  '≈': '~', '×': 'x', '✓': 'v', '‑': '-', ' ': ' ', ' ': ' ', ' ': ' ',
-};
-/** Text safe for the built-in PDF fonts (Windows-1252): known symbols spelled out, anything else outside it replaced. */
-export function pdfText(s: string): string {
-  const cp1252Extra = '€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ';
-  return Array.from(s.normalize('NFC')).map((ch) => {
-    const mapped = MAP[ch];
-    if (mapped !== undefined) return mapped;
-    const code = ch.codePointAt(0) ?? 0;
-    if ((code >= 0x20 && code <= 0x7e) || (code >= 0xa0 && code <= 0xff) || cp1252Extra.includes(ch) || ch === '\n') return ch;
-    return '?';
-  }).join('');
 }
 
 export function isoDate(d: Date): string {
@@ -185,14 +173,16 @@ export function buildReportPdf(input: PdfInput): jsPDF {
     w.text(`What would clear it: ${g.unblockCondition}`, { gap: 3 });
   }
   if (passed.length > 0) w.text(`${passed.length} other gate${passed.length === 1 ? '' : 's'} checked and passed: ${passed.map((g) => g.id).join(', ')}.`, { size: 9, color: INK2 });
+  // Numbered in order of what is present: the low-confidence section only appears when a check trips (v1.3).
+  let section = 5;
   if (output.confidenceFlags.length > 0) {
-    w.heading('5. Low-confidence input');
+    w.heading(`${section++}. Low-confidence input`);
     for (const f of output.confidenceFlags) w.bullet(`${f.id}: ${f.description}`);
     w.text('These flags never adjust the score. They mark answers worth double-checking.', { size: 9, color: INK2 });
   }
 
   // 6. Cross-profile
-  w.heading('6. How much the weights matter');
+  w.heading(`${section}. How much the weights matter`);
   const scores = output.crossProfile.map((c) => c.score);
   const min = Math.min(...scores);
   const max = Math.max(...scores);
@@ -210,6 +200,43 @@ export function buildReportPdf(input: PdfInput): jsPDF {
     { size: 9.5, color: INK2, gap: 6 });
     w.sub('Your score in brief (computed from your assessment, no model involved)');
     w.text([...r.summary.sentences, ...(r.summary.flatNote === null ? [] : [r.summary.flatNote]), ...(r.summary.imbalanceNote === null ? [] : [r.summary.imbalanceNote])].join(' '));
+    // v1.3: the roadmap first, as numbered steps; the use cases follow as its detail.
+    const rm = recommendations.roadmap;
+    w.sub('Roadmap');
+    const s1 = rm.step1.kind === 'required' ? 'Close this gap first' : rm.step1.kind === 'optional' ? 'Optional groundwork' : 'Nothing to close first';
+    w.text(`Step 1. ${s1}`, { bold: true, gap: 1 });
+    if (rm.step1.text !== null) w.text(rm.step1.text, { gap: 1 });
+    if (rm.step1.note !== null) w.text(rm.step1.note, { color: INK2, gap: 1 });
+    const path = rm.step1.path;
+    if (path !== null && path.steps.length > 0) {
+      w.text('One way to get there, from your own answers (computed, no model involved):', { size: 9, color: INK2, gap: 1 });
+      path.steps.forEach((s, i) => w.text(
+        `${i + 1}. Q${s.questionId} ${s.question} From "${s.fromLabel}" to "${s.toLabel}". ${dimensionLabel(path.dimensionId)} ${s.dimensionAfter}/100, headline ${s.headlineAfter}.${s.gatesCleared.length > 0 ? ` Clears ${s.gatesCleared.join(', ')}.` : ''}`,
+        { indent: 8, gap: 1 }));
+      const last = path.steps[path.steps.length - 1];
+      w.text(path.reachesTarget
+        ? `Together: ${dimensionLabel(path.dimensionId)} from ${path.dimensionBefore} to ${last?.dimensionAfter ?? path.dimensionBefore}, headline from ${path.headlineBefore} to ${last?.headlineAfter ?? path.headlineBefore}. Each change raises one answer as little as possible; other routes exist.`
+        : `Even with every answer in ${dimensionLabel(path.dimensionId)} at its top option, it stays below ${path.target}.`, { size: 9, color: INK2 });
+    }
+    w.space(4);
+    const s2 = rm.step2;
+    w.text(s2.blocked ? 'Step 2. Pilot' : `Step 2. Pilot: ${s2.title}`, { bold: true, gap: 1 });
+    if (s2.blocked) w.text(`The suggested pilot, "${s2.title}", is blocked by a gate; see below for what would unblock it.`);
+    else {
+      w.text(s2.rationale, { gap: 1 });
+      if (s2.timing === 'alongside' && rm.step1.dimension !== null) w.text(`Can start now, alongside step 1: it does not depend on ${dimensionLabel(rm.step1.dimension)}.`, { gap: 1 });
+      if (s2.goalNote !== null) w.text(`Why not start with your stated goal: ${s2.goalNote}`, { gap: 1 });
+      w.text(`How to tell it worked: ${s2.successMeasure}`, { gap: 1 });
+      w.text(`When to stop or rethink: ${s2.stopCondition}`, { gap: 1 });
+    }
+    if (r.pilotDependsOnFixFirst !== null) w.text(`Note: the suggested pilot depends on ${dimensionLabel(r.pilotDependsOnFixFirst)}, the dimension to fix first.`, { color: INK2 });
+    if (rm.step3.length > 0) {
+      w.space(4);
+      w.text('Step 3. Later', { bold: true, gap: 1 });
+      for (const d of rm.step3) {
+        w.bullet(`Defer ${d.title} until ${untilText(d.until)}.${d.unlock.length > 0 ? ` Waits on: ${d.unlock.map((u) => `Q${u.questionId} (now: "${u.current}")`).join('; ')}.` : ''}`);
+      }
+    }
     w.sub('Use cases');
     if (r.useCases.length === 0) w.text('No suggestion survived the gate check.');
     for (const item of r.useCases) {
@@ -219,16 +246,10 @@ export function buildReportPdf(input: PdfInput): jsPDF {
       w.text(`Expected outcome: ${u.expectedOutcome}`, { gap: 1 });
       if (item.tradeoff !== null) w.text(`The tradeoff: ${item.tradeoff}`, { gap: 1 });
       w.text(`${u.outcomeConfidence} confidence · ${u.implementationRisk} implementation risk · depends on ${dimensionLabel(u.dependsOnDimension)} · area: ${areaLabel(u.targetFunction)}`, { size: 9, color: INK2, gap: 1 });
-      w.text(`Gated kinds of work: ${u.categories.length === 0 ? 'touches no gated kind of work' : u.categories.map(categoryLabel).join(', ')}`, { size: 9, color: INK2, gap: 1 });
+      w.text(`Kinds of work the gates check: ${u.categories.length === 0 ? 'none' : u.categories.map(categoryLabel).join(', ')}`, { size: 9, color: INK2, gap: 1 });
       for (const g of u.governanceFlags) w.text(`${g.type}: ${g.note}`, { size: 9, color: INK2, indent: 8, gap: 1 });
       w.space(5);
     }
-    w.sub('Roadmap');
-    if (r.roadmap.prerequisite !== null) w.text(`First, close this gap: ${r.roadmap.prerequisite}`);
-    if (r.pilotBlocked) w.text(`The suggested pilot, "${r.roadmap.pilotFirst.useCaseTitle}", is blocked by a gate; see below for what would unblock it.`);
-    else w.text(`Pilot first: ${r.roadmap.pilotFirst.useCaseTitle}. ${r.roadmap.pilotFirst.rationale}`);
-    if (r.pilotDependsOnFixFirst !== null) w.text(`Note: the suggested pilot depends on ${dimensionLabel(r.pilotDependsOnFixFirst)}, the dimension to fix first.`, { color: INK2 });
-    for (const d of r.roadmap.defer) w.bullet(`Defer ${d.useCaseTitle} until ${untilText(d.until)}.`);
     if (r.blocked.length > 0) {
       w.sub('Blocked, and what would unblock it');
       for (const b of r.blocked) {

@@ -1,6 +1,6 @@
 /** Closed value sets the model's output is validated against. */
 import type {
-  DimensionId, GateId, GovernanceFlagType, ImplementationRisk, OutcomeConfidence, UseCaseCategory,
+  DimensionId, GateId, GovernanceFlagType, ImplementationRisk, OutcomeConfidence, QuestionId, UseCaseCategory,
 } from '../data/types';
 
 export const USE_CASE_CATEGORIES = [
@@ -14,6 +14,11 @@ export const GATE_IDS = [
 ] as const satisfies readonly GateId[];
 
 export const DIMENSION_IDS = ['D1', 'D2', 'D3', 'D4', 'D5', 'D6'] as const satisfies readonly DimensionId[];
+/** v1.3: the 24 rubric question ids, for `roadmap.defer[].unlockAnswers`. */
+export const QUESTION_IDS = [
+  '1.1', '1.2', '1.3', '1.4', '2.1', '2.2', '2.3', '2.4', '3.1', '3.2', '3.3', '3.4',
+  '4.1', '4.2', '4.3', '4.4', '5.1', '5.2', '5.3', '5.4', '6.1', '6.2', '6.3', '6.4',
+] as const satisfies readonly QuestionId[];
 export const OUTCOME_CONFIDENCE = ['high', 'medium', 'low'] as const satisfies readonly OutcomeConfidence[];
 export const IMPLEMENTATION_RISK = ['low', 'medium', 'high'] as const satisfies readonly ImplementationRisk[];
 export const GOVERNANCE_FLAG_TYPES = ['data-sensitivity', 'compliance', 'reliability', 'oversight'] as const satisfies readonly GovernanceFlagType[];

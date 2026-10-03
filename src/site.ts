@@ -4,7 +4,7 @@
  */
 
 /** Keep in step with package.json (asserted by a unit test). */
-export const APP_VERSION = '1.2.0';
+export const APP_VERSION = '1.3.0';
 
 /** Public source repository. Null while the repo is private; the footer then omits the link. */
 export const REPO_URL: string | null = null;

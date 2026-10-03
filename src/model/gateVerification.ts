@@ -15,7 +15,7 @@
 import type {
   BackOfficeFixture, BlockedAcknowledgement, DimensionId, GateResult, ModelResponse, ModelUseCase, Roadmap, ScoringOutput, UseCaseCategory,
 } from '../data/types';
-import { deterministicSummary, fixFirstDimension, type DeterministicSummary } from './summary';
+import { deterministicSummary, fixFirstDimension, isFlatSensitivity, type DeterministicSummary } from './summary';
 
 export interface DisplayUseCase {
   readonly useCase: ModelUseCase;
@@ -94,7 +94,8 @@ export function applyGateVerification(
   for (const d of dropped) unavailable.add(d);
   const pilotTitle = response.roadmap.pilotFirst.useCaseTitle;
   const pilotBlocked = unavailable.has(pilotTitle);
-  const fixFirst = fixFirstDimension(output);
+  // v1.3: on a flat ranking there is no clear dimension to fix first, so nothing to flag.
+  const fixFirst = isFlatSensitivity(output) ? null : fixFirstDimension(output);
   const pilot = pilotBlocked ? undefined : kept.find((k) => k.useCase.title === pilotTitle);
   return {
     summary: deterministicSummary(output),

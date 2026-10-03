@@ -10,14 +10,14 @@
  * score is still computed only in code. Gates are verified again in code after it responds.
  */
 import { backOfficeExamples } from '../data/backOfficeExamples';
-import { SENSITIVITY_TARGET } from '../data/bands';
+import { FLAT_SENSITIVITY_MAX_DELTA, SENSITIVITY_TARGET } from '../data/bands';
 import { gates } from '../data/gates';
 import { BACK_OFFICE_NUDGE_FUNCTIONS } from '../data/problemStatementOptions';
-import { dimensions, impactAssessmentQuestion, questionsByDimension } from '../data/questionBank';
-import type { BackOfficeFixture, DimensionId, ProblemStatement, ReadinessInput, ScoringOutput } from '../data/types';
+import { dimensions, impactAssessmentQuestion, questionBank, questionsByDimension } from '../data/questionBank';
+import type { BackOfficeFixture, DimensionId, ProblemStatement, QuestionId, ReadinessInput, ScoringOutput } from '../data/types';
 import { useCaseCategoryDefinitions, useCaseCategoryLabels } from '../data/useCaseCategories';
 import { dimensionLabel } from '../report/lookups';
-import { fixFirstDimension } from './summary';
+import { fixFirstDimension, isFlatSensitivity } from './summary';
 import { USE_CASE_CATEGORIES } from './vocabulary';
 
 export interface UseCaseRange { readonly min: number; readonly max: number }
@@ -30,6 +30,16 @@ export interface ReplyContract {
   readonly range: UseCaseRange;
   /** The dimension the prerequisite must name, or null when none is below adequate. */
   readonly fixFirst: DimensionId | null;
+  /**
+   * v1.3: false when the fix-first ranking is flat (every move ≤ 2 points). The report then says
+   * no dimension is a clear priority, so the prerequisite is optional: null, or any dimension
+   * below adequate. Optional fields default to the v1.2 behaviour (required).
+   */
+  readonly fixFirstRequired?: boolean;
+  /** v1.3: dimensions below adequate, any of which an optional prerequisite may name. */
+  readonly belowAdequate?: readonly DimensionId[];
+  /** v1.3: questions answered below their top option; only these may unlock a deferral. Absent = not checked. */
+  readonly belowTop?: readonly QuestionId[];
   /** Title the pilot may reference besides the model's own use cases (the injected fixture). */
   readonly fixtureTitle: string | null;
 }
@@ -69,9 +79,15 @@ const SCHEMA = `{
     }
   ],
   "roadmap": {
-    "pilotFirst": { "useCaseTitle": "string — exactly the title of one of your useCases", "rationale": "string, <= 30 words" },
+    "pilotFirst": {
+      "useCaseTitle": "string — exactly the title of one of your useCases",
+      "rationale": "string, <= 30 words",
+      "successMeasure": "string, <= 25 words — what to measure, against a baseline taken before the pilot starts, to call it a success. Name the measure; do not invent target percentages",
+      "stopCondition": "string, <= 25 words — the result that would mean stopping or rethinking the pilot",
+      "goalNote": "string | null — ONE sentence, only when the pilot is not the use case that most directly addresses the problem statement: why the company's stated goal comes later. Otherwise null"
+    },
     "prerequisite": "string | null — see the fix-first rule",
-    "defer": [{ "useCaseTitle": "string", "until": "string" }]
+    "defer": [{ "useCaseTitle": "string", "until": "string, no trailing period", "unlockAnswers": ["question ids, e.g. \"1.3\", whose answers must improve before this use case starts; only questions answered below the top option; empty only when it waits on another use case"] }]
   },
   "blockedAcknowledged": [
     { "title": "string", "description": "string, <= 40 words", "useCaseCategory": "a category from the vocabulary", "gateId": "string", "unblockCondition": "string" }
@@ -101,9 +117,15 @@ export function answersBlock(answers: SelectedAnswers): string {
   return `${dims.join('\n')}\nNot scored: ${impactAssessmentQuestion.prompt} Selected: "${ia}"`;
 }
 
-function fixFirstRule(fixFirst: DimensionId | null): string {
+function fixFirstRule(fixFirst: DimensionId | null, flat: boolean, belowAdequate: readonly DimensionId[]): string {
   if (fixFirst === null) {
     return `No dimension is below adequate (${SENSITIVITY_TARGET}/100), so there is no dimension to fix first. Set "roadmap.prerequisite" to null.`;
+  }
+  if (flat) {
+    return `No dimension is a clear priority: every move in the assessment's "sensitivity" ranking is worth ${FLAT_SENSITIVITY_MAX_DELTA} headline points or less, so its order comes down to rounding. The report tells the reader exactly this.
+- Do not describe any dimension as the weak link, the bottleneck, a blocker, or the thing to fix first.
+- "roadmap.prerequisite" is optional. Set it to null, or name ONE dimension below adequate (${belowAdequate.map(dimensionLabel).join('; ')}), written as its id plus exact name, as worthwhile groundwork, citing its answers that are below the top option; never present an answer marked "top option" as a gap. Never present it as something that must happen before the pilot.
+- Choose the pilot on its merits. Defer a use case only for a real reason (a gate warning, a sequencing need, or answers below the top option that it relies on).`;
   }
   const label = dimensionLabel(fixFirst);
   return `The dimension to fix first is ${label}: it is the top entry in the assessment's "sensitivity" ranking, the weakest link whose improvement would lift the headline most.
@@ -118,6 +140,11 @@ export function buildRecommendationPrompt(output: ScoringOutput, problem: Proble
   const range = useCaseRange(nudge);
   const fixture = nudge ? backOfficeExamples[output.industry] : null;
   const fixFirst = fixFirstDimension(output);
+  const flat = isFlatSensitivity(output);
+  const belowAdequate = output.dimensions.filter((d) => d.normalized < SENSITIVITY_TARGET).map((d) => d.id);
+  const belowTop = questionBank
+    .filter((q) => answers.rubricAnswers[q.id] < Math.max(...q.options.map((o) => o.points)))
+    .map((q) => q.id);
 
   const blocked = output.gates.filter((g) => g.status === 'blocked');
   const warned = output.gates.filter((g) => g.status === 'warned' || g.status === 'warned-severe');
@@ -153,11 +180,12 @@ The readiness assessment was computed deterministically in code before you were 
 5. Respect every warning below; they narrow what you may recommend.
 6. Never issue a verdict on whether the company should adopt AI. No go/no-go language, no "you are ready for AI".
 7. Tag every use case with every category from the vocabulary that plausibly applies to it, using the definitions below. Use an empty list only if none of them applies. Tagging is checked in code; an untagged excluded use case is still a violation.
-8. Every use case must be an AI-assisted workflow: a model does part of the work (drafting, classifying, extracting, summarizing, forecasting, answering, matching). Data, integration and process remediation (building a pipeline, cleaning or consolidating data, documenting a process, setting up a review procedure) is never a use case; it belongs in "roadmap.prerequisite".
+8. Every use case must be an AI-assisted workflow: a model does part of the work (drafting, classifying, extracting, summarizing, forecasting, answering, matching). Data, integration and process remediation (building a pipeline, cleaning or consolidating data, documenting a process, setting up a review procedure) is never a use case; it belongs in "roadmap.prerequisite". Neither is anything a fixed rule, threshold or report could do (for example, flagging values more than a set percentage from trend); a use case needs a model's judgment on language, documents or patterns that rules cannot capture.
 9. Sequencing: a use case that needs another use case to exist (for example, reviewing AI-generated forecasts needs the forecasts) must be deferred whenever that use case is deferred, and cannot be the pilot unless what it needs is the pilot.
 10. Ground every claim about the company in the selected answers and the assessment. Never describe as a gap something the company answered at the top option.
 11. Return between ${range.min} and ${range.max} use cases.
-12. Reply with exactly one JSON object matching the schema. No prose, no markdown, no code fences.
+12. Roadmap: give the pilot a success measure and a stop condition a manager could check after the pilot; if the pilot is not the use case that most directly serves the problem statement, say why in "goalNote". For every deferral, list in "unlockAnswers" the questions whose answers must improve first (only ones answered below the top option), and write "until" as a condition a reader can check.
+13. Reply with exactly one JSON object matching the schema. No prose, no markdown, no code fences.
 
 How to read the assessment's fields (so you do not misread them):
 - "contribution": points a dimension adds to the weighted average. Large means strong.
@@ -168,7 +196,7 @@ Dimensions (id, exact name, what it measures):
 ${dimensionBlock()}
 
 Fix-first rule:
-${fixFirstRule(fixFirst)}
+${fixFirstRule(fixFirst, flat, belowAdequate)}
 
 ${nudgeRules}
 
@@ -199,7 +227,10 @@ ${SCHEMA}`;
   }
   sections.push('Return the JSON object now.');
 
-  return { system, user: sections.join('\n\n'), nudge, fixture, range, fixFirst, fixtureTitle: fixture?.title ?? null };
+  return {
+    system, user: sections.join('\n\n'), nudge, fixture, range, fixFirst, fixtureTitle: fixture?.title ?? null,
+    fixFirstRequired: !flat, belowAdequate, belowTop,
+  };
 }
 
 export function repairInstruction(errors: readonly string[], range: UseCaseRange): string {

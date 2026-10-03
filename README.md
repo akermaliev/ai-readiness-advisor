@@ -63,7 +63,10 @@ with its limits:
    industry weighting matters for your answers.
 4. **Optional recommendations:** paste your own Anthropic API key to get use cases tailored to
    your answers, or use the pre-written examples with no key. Use a dedicated key with a spending
-   limit; usage is billed to your Anthropic account.
+   limit; usage is billed to your Anthropic account. The result leads with a three-step roadmap:
+   the gap to close first, with the specific answer changes that would close it (computed, no
+   model involved); the pilot, with how to tell it worked and when to stop; and what waits, with
+   the answers it waits on. The use cases follow as the detail.
 5. **Download the PDF:** optionally add a company name for the title and file name.
 
 ## How a score is built
@@ -132,10 +135,16 @@ The score is never computed by the model, and raw answer points are not sent.
 
 **What it is told:**
 - Every use case must be an AI-assisted workflow. Data, integration and process remediation
-  belongs in the prerequisite, never in the use cases.
+  belongs in the prerequisite, never in the use cases, and neither does anything a fixed rule or
+  threshold could do.
 - A use case that needs another use case must be deferred with it.
 - The prerequisite names the fix-first dimension and cites the company's real low answers. A
-  top-option answer is never presented as a gap.
+  top-option answer is never presented as a gap. When every fix-first move is worth 2 points or
+  less, the report says no dimension is a clear priority, and the model is told the same: the
+  prerequisite becomes optional and nothing is called the weak link.
+- The pilot carries a success measure and a stop condition, plus a one-sentence note when it is
+  not the use case that most directly serves the stated goal. Each deferral names the questions
+  whose answers must improve first.
 - Dimensions are referred to only by id plus exact name.
 - Numbers from the assessment are never restated.
 
@@ -147,20 +156,27 @@ The score is never computed by the model, and raw answer points are not sent.
   ([structured outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs),
   [adaptive thinking](https://platform.claude.com/docs/en/build-with-claude/adaptive-thinking),
   [effort](https://platform.claude.com/docs/en/build-with-claude/effort)).
-- A reply that is cut off, or that carries no text, is retried once and then falls back to the
-  pre-written examples.
+- A reply that is cut off, or that carries no text, is retried once at low effort (the same
+  request would likely run out again) and then falls back to the pre-written examples.
 
 **What code checks:**
 - **Checks a schema cannot express:**
   - the number of use cases
   - that the pilot is one of them (ignoring case, quotes and trailing punctuation)
-  - that the prerequisite names the fix-first dimension
+  - that the prerequisite names the fix-first dimension (or, on a flat ranking, is empty or names
+    a dimension below adequate)
+  - that every question a deferral waits on is answered below its top option
   - that every dimension id in visible text carries its exact name
   - One retry is allowed; what was wrong is shown on the page, collapsed.
 - **Gates:** every suggestion's categories are shown and checked against the gates. A blocked
   suggestion, or a blocked back-office alternative, is removed and listed with what would
   unblock it.
 - **Pilot flag:** a pilot that depends on the dimension to fix first is flagged, not removed.
+- **The prerequisite's answer changes:** computed by the engine, not the model. Starting from the
+  company's answers, it raises that dimension's answers one option at a time until the dimension
+  reaches adequate (75), recomputing the whole assessment after each change, and lists the
+  resulting dimension score, headline and any gate that stops firing. It is one route, not the
+  only one.
 - **Score narrative:** computed from the scoring output, not written by the model, and labeled
   as such.
 - **Run details panel:** shows each reply's stop reason, token counts and time, and nothing
@@ -208,7 +224,7 @@ page loaded but does not report the raw HTTP status.
 
 ## Validation status
 
-The arithmetic is verified by 168 unit tests (every calculation, every boundary, hand-computed
+The arithmetic is verified by 181 unit tests (every calculation, every boundary, hand-computed
 outputs). Whether the score measures readiness is not.
 
 Three authored personas land in their target ranges at the 50-250 anchor: weak **26**, median
@@ -282,6 +298,8 @@ checked only against three authored personas, never against companies with known
 10. **The pre-written examples are thin for heavily gated companies.** For some answer patterns
     every example for the industry is gated, so the no-key fallback has no usable pilot.
 11. **Single-session, no persistence**, so no re-assessment over time.
+12. **The PDF's built-in font covers Latin script only.** A company name, or model text, in
+    another script (Cyrillic, CJK) prints as "?". The page warns when a company name is affected.
 
 This tool encodes a defensible methodology and makes its reasoning visible. It does not replace
 an assessment engagement.
@@ -294,7 +312,7 @@ when a PDF is requested).
 ```bash
 npm install          # on a fresh clone; if node_modules came from another OS, delete it first
 npm run dev          # local dev server
-npm test             # 168 unit tests: invariants, engine, calibration, model layer, PDF, site
+npm test             # 181 unit tests: invariants, engine, calibration, model layer, PDF, site
 npm run typecheck    # whole app + the browser-free core
 npm run build        # typecheck + static build into dist/
 ```

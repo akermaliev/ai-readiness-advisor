@@ -11,6 +11,9 @@
  *   - the pilot's title is one of the returned use cases (or the injected fixture), ignoring
  *     case, quotes, spacing and trailing punctuation; roadmap titles are mapped to the exact one;
  *   - the prerequisite names the fix-first dimension, or is null when there is none (Fix 1);
+ *     when the fix-first ranking is flat it is optional, and if present names a dimension
+ *     below adequate (v1.3);
+ *   - every question a deferral says it is unlocked by is answered below its top option (v1.3);
  *   - every dimension id in text the reader sees carries its exact name, after or before the
  *     id, any case, "&" or "and" (Fix 1).
  *     The v1.0 run called D4 "process maturity" and D6 "oversight"; this catches that class.
@@ -21,11 +24,11 @@
  */
 import { dimensions } from '../data/questionBank';
 import type {
-  BlockedAcknowledgement, DimensionId, GovernanceFlag, ModelResponse, ModelUseCase, Roadmap, UseCaseCategory,
+  BlockedAcknowledgement, DimensionId, GovernanceFlag, ModelResponse, ModelUseCase, QuestionId, Roadmap, UseCaseCategory,
 } from '../data/types';
 import type { ReplyContract } from './prompt';
 import {
-  canonicalOf, DIMENSION_IDS, GATE_IDS, GOVERNANCE_FLAG_TYPES, IMPLEMENTATION_RISK, OUTCOME_CONFIDENCE, USE_CASE_CATEGORIES,
+  canonicalOf, DIMENSION_IDS, GATE_IDS, GOVERNANCE_FLAG_TYPES, IMPLEMENTATION_RISK, OUTCOME_CONFIDENCE, QUESTION_IDS, USE_CASE_CATEGORIES,
 } from './vocabulary';
 
 /** Model-supplied values echoed in error messages are cut short; errors are shown on the page. */
@@ -122,11 +125,25 @@ function roadmap(c: Collector, raw: unknown): Roadmap {
   const o = c.obj(raw, 'roadmap');
   const p = c.obj(o.pilotFirst, 'roadmap.pilotFirst');
   return {
-    pilotFirst: { useCaseTitle: c.str(p, 'useCaseTitle', 'roadmap.pilotFirst'), rationale: c.str(p, 'rationale', 'roadmap.pilotFirst') },
+    pilotFirst: {
+      useCaseTitle: c.str(p, 'useCaseTitle', 'roadmap.pilotFirst'),
+      rationale: c.str(p, 'rationale', 'roadmap.pilotFirst'),
+      successMeasure: c.str(p, 'successMeasure', 'roadmap.pilotFirst'),
+      stopCondition: c.str(p, 'stopCondition', 'roadmap.pilotFirst'),
+      goalNote: emptyToNull(c.strOrNull(p, 'goalNote', 'roadmap.pilotFirst')),
+    },
     prerequisite: c.strOrNull(o, 'prerequisite', 'roadmap'),
     defer: c.arr(o, 'defer', 'roadmap').map((v, i) => {
-      const d = c.obj(v, `roadmap.defer[${i}]`);
-      return { useCaseTitle: c.str(d, 'useCaseTitle', `roadmap.defer[${i}]`), until: c.str(d, 'until', `roadmap.defer[${i}]`) };
+      const at = `roadmap.defer[${i}]`;
+      const d = c.obj(v, at);
+      const unlockAnswers = c.arr(d, 'unlockAnswers', at).flatMap((q, j): QuestionId[] => {
+        // "Q1.3" and "1.3" are the same question.
+        const canonical = canonicalOf(QUESTION_IDS, typeof q === 'string' ? q.trim().replace(/^q/i, '') : q);
+        if (canonical !== undefined) return [canonical];
+        c.errors.push(`${at}.unlockAnswers[${j}] ${shown(q)} is not a question id (use "1.1" to "6.4")`);
+        return [];
+      });
+      return { useCaseTitle: c.str(d, 'useCaseTitle', at), until: c.str(d, 'until', at), unlockAnswers: [...new Set(unlockAnswers)] };
     }),
   };
 }
@@ -141,6 +158,9 @@ function blocked(c: Collector, raw: unknown, at: string): BlockedAcknowledgement
     unblockCondition: c.str(o, 'unblockCondition', at),
   };
 }
+
+/** A blank optional note is the same as no note. */
+const emptyToNull = (s: string | null): string | null => (s === null || s.trim() === '' ? null : s);
 
 const NAMES: Readonly<Record<DimensionId, string>> = Object.fromEntries(dimensions.map((d) => [d.id, d.name])) as Record<DimensionId, string>;
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -196,11 +216,27 @@ function crossField(r: ModelResponse, contract: ReplyContract): { errors: string
   };
 
   const { fixFirst } = contract;
-  if (fixFirst === null && r.roadmap.prerequisite !== null) {
+  const required = contract.fixFirstRequired ?? true;
+  const prereq = r.roadmap.prerequisite;
+  if (fixFirst === null && prereq !== null) {
     errors.push('roadmap.prerequisite must be null: no dimension is below adequate, so there is nothing to fix first');
   }
-  if (fixFirst !== null && (r.roadmap.prerequisite === null || !new RegExp(`\\b${fixFirst}\\b`).test(r.roadmap.prerequisite))) {
+  if (fixFirst !== null && required && (prereq === null || !new RegExp(`\\b${fixFirst}\\b`).test(prereq))) {
     errors.push(`roadmap.prerequisite must name the dimension to fix first, written as "${fixFirst} ${NAMES[fixFirst]}"`);
+  }
+  if (fixFirst !== null && !required && prereq !== null) {
+    const allowed = contract.belowAdequate ?? [fixFirst];
+    if (!allowed.some((id) => new RegExp(`\\b${id}\\b`).test(prereq))) {
+      errors.push(`roadmap.prerequisite must be null or name one dimension below adequate (${allowed.map((id) => `${id} ${NAMES[id]}`).join('; ')})`);
+    }
+  }
+  if (contract.belowTop !== undefined) {
+    const belowTop = new Set(contract.belowTop);
+    r.roadmap.defer.forEach((d, i) => {
+      for (const q of d.unlockAnswers) {
+        if (!belowTop.has(q)) errors.push(`roadmap.defer[${i}].unlockAnswers includes ${q}, which is already answered at the top option; list only questions answered below it`);
+      }
+    });
   }
 
   r.useCases.forEach((u, i) => {
@@ -211,7 +247,9 @@ function crossField(r: ModelResponse, contract: ReplyContract): { errors: string
     u.riskDrivers.forEach((d, j) => checkDimensionReferences(d, `${at}.riskDrivers[${j}]`, errors));
     u.governanceFlags.forEach((g, j) => checkDimensionReferences(g.note, `${at}.governanceFlags[${j}].note`, errors));
   });
-  checkDimensionReferences(r.roadmap.pilotFirst.rationale, 'roadmap.pilotFirst.rationale', errors);
+  for (const k of ['rationale', 'successMeasure', 'stopCondition', 'goalNote'] as const) {
+    checkDimensionReferences(r.roadmap.pilotFirst[k], `roadmap.pilotFirst.${k}`, errors);
+  }
   checkDimensionReferences(r.roadmap.prerequisite, 'roadmap.prerequisite', errors);
   r.roadmap.defer.forEach((d, i) => checkDimensionReferences(d.until, `roadmap.defer[${i}].until`, errors));
   r.blockedAcknowledged.forEach((b, i) => {

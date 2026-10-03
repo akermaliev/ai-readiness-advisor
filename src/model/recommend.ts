@@ -3,7 +3,9 @@
  *
  *   valid reply                                  -> gate-verified recommendations
  *   invalid JSON / schema / rules                -> one repair retry, then fall back
- *   cut off (stop_reason max_tokens) or no text  -> one fresh retry, then fall back (v1.2, A1)
+ *   cut off (stop_reason max_tokens) or no text  -> one fresh retry, then fall back (v1.2, A1);
+ *                                                   the retry asks for low effort (v1.3), since
+ *                                                   the same request would likely run out again
  *   API error, timeout, network                  -> report the failure; the deterministic report
  *                                                   is unaffected and the fallback is one click away
  *
@@ -41,11 +43,13 @@ export type RecommendationOutcome =
 /** The answer is ~2-3k tokens; the rest is room for thinking (A1). */
 export const MAX_TOKENS = 16_000;
 
+export type Effort = 'low' | 'medium';
+
 /** The request for a model, with thinking and effort only where the model supports them. */
-export function buildRequest(model: string, system: string, messages: readonly ChatMessage[]): MessagesRequest {
+export function buildRequest(model: string, system: string, messages: readonly ChatMessage[], effort: Effort = 'medium'): MessagesRequest {
   const format = { type: 'json_schema', schema: MODEL_RESPONSE_SCHEMA } as const;
   return supportsAdaptive(model)
-    ? { model, max_tokens: MAX_TOKENS, system, messages, thinking: { type: 'adaptive' }, output_config: { format, effort: 'medium' } }
+    ? { model, max_tokens: MAX_TOKENS, system, messages, thinking: { type: 'adaptive' }, output_config: { format, effort } }
     : { model, max_tokens: MAX_TOKENS, system, messages, output_config: { format } };
 }
 
@@ -67,7 +71,7 @@ export async function requestRecommendations(args: {
   readonly transport: Transport; readonly model: string;
 }): Promise<RecommendationOutcome> {
   const prompt = buildRecommendationPrompt(args.output, args.problem, args.answers);
-  const send = (messages: readonly ChatMessage[]) => args.transport(buildRequest(args.model, prompt.system, messages));
+  const send = (messages: readonly ChatMessage[], effort: Effort = 'medium') => args.transport(buildRequest(args.model, prompt.system, messages, effort));
   const check = (r: Ok): ValidationResult => {
     const cut = cutOffError(r);
     return cut !== null ? { ok: false, errors: [cut] } : parseModelReply(r.text, prompt, r.stopReason);
@@ -83,10 +87,11 @@ export async function requestRecommendations(args: {
 
   // A cut-off or empty reply is retried fresh: there is no usable reply to repair, and an
   // empty assistant turn is not a valid message.
-  const retry: readonly ChatMessage[] = cutOffError(r1) !== null
+  const cutOff = cutOffError(r1) !== null;
+  const retry: readonly ChatMessage[] = cutOff
     ? first
     : [...first, { role: 'assistant', content: r1.text }, { role: 'user', content: repairInstruction(p1.errors, prompt.range) }];
-  const r2 = await send(retry);
+  const r2 = await send(retry, cutOff ? 'low' : 'medium');
   if (!r2.ok) return { kind: 'request-failed', reason: r2.kind, status: r2.status, message: r2.message, attempts: 2 };
   const p2 = check(r2);
   if (p2.ok) {

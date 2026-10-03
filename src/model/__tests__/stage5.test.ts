@@ -12,7 +12,7 @@ import { buildRecommendationPrompt, type ReplyContract, type UseCaseRange } from
 import { areaLabel, untilText } from '../display';
 import { buildRequest, MAX_TOKENS, requestRecommendations } from '../recommend';
 import { MODEL_RESPONSE_SCHEMA, OUTPUT_CONFIG } from '../schema';
-import { deterministicSummary, fixFirstDimension } from '../summary';
+import { deterministicSummary, fixFirstDimension, isFlatSensitivity } from '../summary';
 import { parseModelReply } from '../validate';
 import { DIMENSION_IDS, GATE_IDS, USE_CASE_CATEGORIES } from '../vocabulary';
 
@@ -39,14 +39,16 @@ const uc = (title: string, categories: ModelUseCase['categories'], dependsOnDime
   riskDrivers: ['data quality'], governanceFlags: [{ type: 'reliability', note: 'Human review.' }],
   dependsOnDimension, isBackOfficeAlternative: false,
 });
+/** v1.3 pilot fields every reply carries. */
+const PILOT = { successMeasure: 'Hours spent per week, against a baseline taken before the pilot.', stopCondition: 'No change after a quarter.', goalNote: null };
 /** A contract-compliant reply for `output`: the prerequisite names its fix-first dimension. */
 const response = (useCases: ModelUseCase[], extra: Partial<ModelResponse> = {}, output: ScoringOutput = MEDIAN): ModelResponse => {
   const fixFirst = fixFirstDimension(output);
   return {
     scoreNarrative: 'Held back by data maturity.', imbalanceNote: null, useCases,
-    roadmap: { pilotFirst: { useCaseTitle: useCases[0]?.title ?? '', rationale: 'Lowest risk.' },
+    roadmap: { pilotFirst: { ...PILOT, useCaseTitle: useCases[0]?.title ?? '', rationale: 'Lowest risk.' },
       prerequisite: fixFirst === null ? null : `Close the gap in ${dimensionLabel(fixFirst)} first.`,
-      defer: useCases.slice(1).map((u) => ({ useCaseTitle: u.title, until: 'later' })) },
+      defer: useCases.slice(1).map((u) => ({ useCaseTitle: u.title, until: 'later', unlockAnswers: [] })) },
     blockedAcknowledged: [], ...extra,
   };
 };
@@ -298,7 +300,12 @@ describe('Fix 1 — dimension names and the fix-first rule', () => {
     const fixFirst = out.sensitivity.find((s) => s.delta > 0)?.dimensionId ?? null;
     expect(p.fixFirst).toBe(fixFirst);
     if (fixFirst === null) expect(p.system).toMatch(/Set "roadmap\.prerequisite" to null/);
-    else {
+    else if (isFlatSensitivity(out)) {
+      // v1.3: a flat ranking (the strong bank) has no clear priority, so nothing is "the dimension to fix first".
+      expect(p.fixFirstRequired).toBe(false);
+      expect(p.system).toContain('No dimension is a clear priority');
+      expect(p.system).not.toContain('The dimension to fix first is');
+    } else {
       expect(p.system).toContain(`The dimension to fix first is ${dimensionLabel(fixFirst)}`);
       expect(p.system).toContain(`Prefer a pilot whose "dependsOnDimension" is not ${fixFirst}`);
     }
@@ -338,20 +345,20 @@ describe('Fix 1 — dimension names and the fix-first rule', () => {
     ];
     for (const text of cases) {
       const base = response([uc('A', []), uc('B', [])]);
-      const r = parseModelReply(JSON.stringify({ ...base, roadmap: { ...base.roadmap, pilotFirst: { useCaseTitle: 'A', rationale: text } } }), contract({ min: 2, max: 4 }));
+      const r = parseModelReply(JSON.stringify({ ...base, roadmap: { ...base.roadmap, pilotFirst: { ...PILOT, useCaseTitle: 'A', rationale: text } } }), contract({ min: 2, max: 4 }));
       expect(!r.ok && r.errors.join('\n'), text).toMatch(/refers to D[246] without its exact name/);
     }
   });
   it('validator: id plus exact name passes, with or without punctuation between', () => {
     const base = response([uc('A', []), uc('B', [])]);
     for (const text of ['Depends on D4 Governance & compliance.', 'Needs D2: Integration architecture.', 'See D6 (strategy & sponsorship).']) {
-      const r = parseModelReply(JSON.stringify({ ...base, roadmap: { ...base.roadmap, pilotFirst: { useCaseTitle: 'A', rationale: text } } }), contract({ min: 2, max: 4 }));
+      const r = parseModelReply(JSON.stringify({ ...base, roadmap: { ...base.roadmap, pilotFirst: { ...PILOT, useCaseTitle: 'A', rationale: text } } }), contract({ min: 2, max: 4 }));
       expect(r.ok, text).toBe(true);
     }
   });
   it('validator: the pilot must be one of the returned use cases, or the injected fixture', () => {
     const base = response([uc('A', []), uc('B', [])]);
-    const stray = { ...base, roadmap: { ...base.roadmap, pilotFirst: { useCaseTitle: 'Something else', rationale: 'r' } } };
+    const stray = { ...base, roadmap: { ...base.roadmap, pilotFirst: { ...PILOT, useCaseTitle: 'Something else', rationale: 'r' } } };
     const r = parseModelReply(JSON.stringify(stray), contract({ min: 2, max: 4 }));
     expect(!r.ok && r.errors.join('\n')).toMatch(/pilotFirst\.useCaseTitle "Something else" is not exactly the title/);
     const withFixture: ReplyContract = { range: { min: 2, max: 4 }, fixFirst: 'D1', fixtureTitle: 'Something else' };
@@ -377,14 +384,14 @@ describe('internal rehearsal regressions (2026-09-29)', () => {
   it.each(['weekly sales report drafting', 'Weekly sales report drafting.', '\u201CWeekly sales report drafting\u201D', '  Weekly  sales report drafting '])(
     'maps a near-miss pilot title to the real one: %s', (t) => {
       const b = base();
-      const r = parseModelReply(JSON.stringify({ ...b, roadmap: { ...b.roadmap, pilotFirst: { useCaseTitle: t, rationale: 'r' } } }), contract({ min: 2, max: 4 }));
+      const r = parseModelReply(JSON.stringify({ ...b, roadmap: { ...b.roadmap, pilotFirst: { ...PILOT, useCaseTitle: t, rationale: 'r' } } }), contract({ min: 2, max: 4 }));
       expect(r.ok ? r.value.roadmap.pilotFirst.useCaseTitle : r.errors).toBe('Weekly sales report drafting');
     });
   it('a gated fixture named as the pilot is shown as blocked, and its deferral is removed', async () => {
     const fixtureTitle = buildRecommendationPrompt(WEAK, NUDGE, ans(WEAK)).fixtureTitle ?? '';
     const b = response([uc('A', [], 'D3'), uc('B', [], 'D3')], {}, WEAK);
-    const r = { ...b, roadmap: { ...b.roadmap, pilotFirst: { useCaseTitle: fixtureTitle, rationale: 'r' },
-      defer: [{ useCaseTitle: fixtureTitle, until: 'later' }] } };
+    const r = { ...b, roadmap: { ...b.roadmap, pilotFirst: { ...PILOT, useCaseTitle: fixtureTitle, rationale: 'r' },
+      defer: [{ useCaseTitle: fixtureTitle, until: 'later', unlockAnswers: [] }] } };
     const out = await requestRecommendations({ output: WEAK, answers: ans(WEAK), problem: NUDGE, transport: mockTransport([reply(r)]), model: 'm' });
     if (out.kind !== 'live') throw new Error(out.kind);
     expect(out.result.pilotBlocked).toBe(true);
