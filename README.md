@@ -224,7 +224,7 @@ page loaded but does not report the raw HTTP status.
 
 ## Validation status
 
-The arithmetic is verified by 182 unit tests (every calculation, every boundary, hand-computed
+The arithmetic is verified by 184 unit tests (every calculation, every boundary, hand-computed
 outputs). Whether the score measures readiness is not.
 
 Three authored personas land in their target ranges at the 50-250 anchor: weak **26**, median
@@ -318,7 +318,7 @@ when a PDF is requested).
 ```bash
 npm install          # on a fresh clone; if node_modules came from another OS, delete it first
 npm run dev          # local dev server
-npm test             # 182 unit tests: invariants, engine, calibration, model layer, PDF, site
+npm test             # 184 unit tests: invariants, engine, calibration, model layer, PDF, site
 npm run typecheck    # whole app + the browser-free core
 npm run build        # typecheck + static build into dist/
 ```

@@ -141,6 +141,26 @@ describe('v1.3 — deferral wording (first live run, 2026-10-12)', () => {
   });
 });
 
+describe('v1.3 — first live runs (2026-10-12)', () => {
+  it('a free-text Area is capitalised; known ids still map to labels', async () => {
+    const { areaLabel } = await import('../display');
+    expect(areaLabel('customer service')).toBe('Customer service');
+    expect(areaLabel('supply-chain')).toBe('Supply chain');
+  });
+  it('flat ranking: a prerequisite that is only the dimension name moves into the heading', () => {
+    const p = buildRecommendationPrompt(STRONG, NO_NUDGE, STRONG_IN);
+    const parsed = parseModelReply(JSON.stringify(reply('D2 Integration architecture')), p);
+    if (!parsed.ok) throw new Error(parsed.errors.join('; '));
+    const view = buildRoadmapView(applyGateVerification(parsed.value, STRONG, null), STRONG, STRONG_IN);
+    expect(view.step1.kind).toBe('optional');
+    expect(view.step1.title).toBe('Optional groundwork: D2 Integration architecture');
+    expect(view.step1.text).toBeNull();
+    const withText = parseModelReply(JSON.stringify(reply('D2 Integration architecture: APIs exist only on some systems.')), p);
+    if (!withText.ok) throw new Error(withText.errors.join('; '));
+    expect(buildRoadmapView(applyGateVerification(withText.value, STRONG, null), STRONG, STRONG_IN).step1.text).toMatch(/only on some systems/);
+  });
+});
+
 describe('v1.3 — PDF text', () => {
   it('flags a company name the built-in font cannot draw', () => {
     expect(hasUnprintable('Кыргыз Телеком')).toBe(true);

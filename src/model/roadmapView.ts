@@ -10,6 +10,7 @@
  * Only numbers from the engine appear here; the model's text is shown as written.
  */
 import { SENSITIVITY_TARGET } from '../data/bands';
+import { dimensionLabel } from '../report/lookups';
 import { questionBank } from '../data/questionBank';
 import type { DimensionId, QuestionId, ReadinessInput, ScoringOutput } from '../data/types';
 import { improvementPath, type ImprovementPath } from '../engine';
@@ -19,6 +20,8 @@ import { fixFirstDimension, isFlatSensitivity } from './summary';
 export interface RoadmapStep1 {
   /** required: the fix-first gap; optional: groundwork on a flat ranking; none: nothing to close first. */
   readonly kind: 'required' | 'optional' | 'none';
+  /** The step's heading, shared by the page and the PDF. */
+  readonly title: string;
   readonly text: string | null;
   readonly dimension: DimensionId | null;
   readonly path: ImprovementPath | null;
@@ -63,13 +66,19 @@ export function buildRoadmapView(result: VerifiedRecommendations, output: Scorin
 
   let step1: RoadmapStep1;
   if (roadmap.prerequisite === null) {
-    step1 = { kind: 'none', text: null, dimension: null, path: null, note: fixFirst === null ? NO_GAP : flat ? FLAT : null };
+    step1 = { kind: 'none', title: 'Nothing to close first', text: null, dimension: null, path: null, note: fixFirst === null ? NO_GAP : flat ? FLAT : null };
   } else if (flat) {
     const below = output.dimensions.filter((d) => d.normalized < SENSITIVITY_TARGET).map((d) => d.id);
     const named = below.find((id) => new RegExp(`\\b${id}\\b`).test(roadmap.prerequisite ?? '')) ?? null;
-    step1 = { kind: 'optional', text: roadmap.prerequisite, dimension: named, path: named === null ? null : improvementPath(input, named), note: FLAT };
+    // A prerequisite that is only the dimension's name adds nothing the heading doesn't say (first live run, strong preset).
+    const bare = named !== null && roadmap.prerequisite.replace(new RegExp(`\\b${named}\\b`), '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim().toLowerCase()
+      === dimensionLabel(named).replace(/^D\d\s*/, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim().toLowerCase();
+    step1 = {
+      kind: 'optional', title: named === null ? 'Optional groundwork' : `Optional groundwork: ${dimensionLabel(named)}`,
+      text: bare ? null : roadmap.prerequisite, dimension: named, path: named === null ? null : improvementPath(input, named), note: FLAT,
+    };
   } else {
-    step1 = { kind: 'required', text: roadmap.prerequisite, dimension: fixFirst, path: fixFirst === null ? null : improvementPath(input, fixFirst), note: null };
+    step1 = { kind: 'required', title: 'Close this gap first', text: roadmap.prerequisite, dimension: fixFirst, path: fixFirst === null ? null : improvementPath(input, fixFirst), note: null };
   }
 
   const pilot = result.useCases.find((u) => u.useCase.title === roadmap.pilotFirst.useCaseTitle);

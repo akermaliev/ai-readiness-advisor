@@ -253,7 +253,7 @@ function Step({ n, title, testId, children }: { n: number; title: ReactNode; tes
 function RoadmapSteps({ roadmap, pilotDependsOnFixFirst }: { roadmap: RoadmapView; pilotDependsOnFixFirst: VerifiedRecommendations['pilotDependsOnFixFirst'] }) {
   const { step1, step2, step3 } = roadmap;
   const path = step1.path;
-  const step1Title = step1.kind === 'required' ? 'Close this gap first' : step1.kind === 'optional' ? 'Optional groundwork' : 'Nothing to close first';
+  const step1Title = step1.title;
   return (
     <div className="rounded-lg border border-line bg-surface p-4 sm:p-5" data-testid="roadmap">
       <h3 className="text-base font-semibold text-ink">Roadmap</h3>

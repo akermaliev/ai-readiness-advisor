@@ -203,7 +203,7 @@ export function buildReportPdf(input: PdfInput): jsPDF {
     // v1.3: the roadmap first, as numbered steps; the use cases follow as its detail.
     const rm = recommendations.roadmap;
     w.sub('Roadmap');
-    const s1 = rm.step1.kind === 'required' ? 'Close this gap first' : rm.step1.kind === 'optional' ? 'Optional groundwork' : 'Nothing to close first';
+    const s1 = rm.step1.title;
     w.text(`Step 1. ${s1}`, { bold: true, gap: 1 });
     if (rm.step1.text !== null) w.text(rm.step1.text, { gap: 1 });
     if (rm.step1.note !== null) w.text(rm.step1.note, { color: INK2, gap: 1 });
