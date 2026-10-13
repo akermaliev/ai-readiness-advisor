@@ -106,14 +106,14 @@ describe('prompt builder', () => {
 describe('mocked response 1 — well-formed', () => {
   it('renders as live recommendations after a single call', async () => {
     const t = mockTransport([reply(WELL_FORMED)]);
-    const out = await requestRecommendations({ output: MEDIAN, answers: ans(MEDIAN), problem: NO_NUDGE, transport: t, model: 'claude-sonnet-5' });
+    const out = await requestRecommendations({ output: MEDIAN, answers: ans(MEDIAN), problem: NO_NUDGE, transport: t, model: 'claude-sonnet-5-5' });
     expect(out.kind).toBe('live');
     if (out.kind !== 'live') return;
     expect(out.attempts).toBe(1);
     expect(out.result.useCases.map((u) => u.useCase.title)).toEqual(['Demand forecasting', 'Invoice matching']);
     expect(out.result.blocked).toEqual([]);
     expect(t.calls).toHaveLength(1);
-    expect(t.calls[0]?.model).toBe('claude-sonnet-5');
+    expect(t.calls[0]?.model).toBe('claude-sonnet-5-5');
   });
   it('tolerates a code fence around the JSON', async () => {
     const t = mockTransport([reply('```json\n' + JSON.stringify(WELL_FORMED) + '\n```')]);
@@ -413,7 +413,7 @@ describe('v1.2 Part A — the model call', () => {
 
   it('A1: a text-less max_tokens reply is retried, then falls back; the error names stop_reason and the blocks returned', async () => {
     const t = mockTransport([THINKING_ONLY, THINKING_ONLY]);
-    const out = await requestRecommendations({ output: WEAK, answers: ans(WEAK), problem: NUDGE, transport: t, model: 'claude-sonnet-5' });
+    const out = await requestRecommendations({ output: WEAK, answers: ans(WEAK), problem: NUDGE, transport: t, model: 'claude-sonnet-5-5' });
     expect(out.kind).toBe('invalid-response');
     if (out.kind !== 'invalid-response') return;
     expect(out.errors).toEqual(['no text (stop_reason: max_tokens; returned: thinking)']);
@@ -425,7 +425,7 @@ describe('v1.2 Part A — the model call', () => {
   });
   it('A1: a cut-off reply with partial text is retried fresh and can recover', async () => {
     const t = mockTransport([CUT_OFF, reply(WELL_FORMED)]);
-    const out = await requestRecommendations({ output: MEDIAN, answers: ans(MEDIAN), problem: NO_NUDGE, transport: t, model: 'claude-sonnet-5' });
+    const out = await requestRecommendations({ output: MEDIAN, answers: ans(MEDIAN), problem: NO_NUDGE, transport: t, model: 'claude-sonnet-5-5' });
     if (out.kind !== 'live') throw new Error(out.kind);
     expect(out.attempts).toBe(2);
     expect(out.repairErrors).toEqual(['reply was cut off at the token limit (stop_reason: max_tokens)']);
@@ -440,17 +440,18 @@ describe('v1.2 Part A — the model call', () => {
   });
   it('A1: 16,000 max tokens; adaptive thinking at medium effort only where the model supports it', () => {
     expect(MAX_TOKENS).toBe(16_000);
-    for (const model of ['claude-sonnet-5', 'claude-opus-5-5']) {
+    for (const model of ['claude-sonnet-5-5', 'claude-opus-5-5', 'claude-haiku-5-5']) {
       const r = buildRequest(model, 's', []);
       expect(r.thinking).toEqual({ type: 'adaptive' });
       expect(r.output_config?.effort).toBe('medium');
       expect(r.output_config?.format.type).toBe('json_schema');
       expect(r.max_tokens).toBe(16_000);
     }
-    const haiku = buildRequest('claude-haiku-4-5-20251001', 's', []);
-    expect('thinking' in haiku).toBe(false);          // adaptive thinking returns a 400 on Haiku 4.5
-    expect(haiku.output_config?.effort).toBeUndefined(); // effort is not supported on Haiku 4.5
-    expect(haiku.output_config?.format.type).toBe('json_schema');
+    // A model outside the picker gets neither thinking nor effort, so an unknown id can't cause a 400.
+    const other = buildRequest('claude-haiku-4-5-20251001', 's', []);
+    expect('thinking' in other).toBe(false);
+    expect(other.output_config?.effort).toBeUndefined();
+    expect(other.output_config?.format.type).toBe('json_schema');
   });
   it.each(calibrationPersonas.map((p) => [p.id, p.input] as const))('A4: the %s prompt carries every selected answer label and the impact-assessment answer', (_id, input) => {
     const out = computeReadiness(input);

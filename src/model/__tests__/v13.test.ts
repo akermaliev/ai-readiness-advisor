@@ -93,7 +93,7 @@ describe('v1.3 — reply contract', () => {
     const calls: MessagesRequest[] = [];
     const queue = [ok('{"partial', 'max_tokens'), ok(reply('Close D1 Data maturity & accessibility.'))];
     const t: Transport = async (req) => { calls.push(req); return queue.shift() as TransportResult; };
-    const out = await requestRecommendations({ output: MEDIAN, problem: NO_NUDGE, answers: MEDIAN_IN, transport: t, model: 'claude-sonnet-5' });
+    const out = await requestRecommendations({ output: MEDIAN, problem: NO_NUDGE, answers: MEDIAN_IN, transport: t, model: 'claude-sonnet-5-5' });
     expect(out.kind).toBe('live');
     expect(calls.map((c) => c.output_config?.effort)).toEqual(['medium', 'low']);
   });

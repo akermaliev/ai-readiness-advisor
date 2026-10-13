@@ -49,16 +49,18 @@ export type Transport = (req: MessagesRequest) => Promise<TransportResult>;
 export const ANTHROPIC_MESSAGES_URL = 'https://api.anthropic.com/v1/messages';
 
 /**
- * `adaptive`: the model supports thinking {type: "adaptive"} and output_config.effort.
- * Checked against Anthropic's docs on 2026-09-30: Sonnet 5 and Opus 5.5 support both;
- * Haiku 4.5 supports neither (adaptive thinking returns a 400 there), so it gets plain output.
+ * The current Claude generation (5.5). `adaptive`: the model supports thinking {type: "adaptive"}
+ * and output_config.effort; all three do, and all three support structured outputs.
+ * Checked against Anthropic's models, effort and structured-outputs docs on 2026-10-12.
+ * Replaced Sonnet 5 and Haiku 4.5 (Haiku 4.5 could not take adaptive thinking and is the oldest,
+ * with the earliest retirement date).
  */
 export const MODEL_OPTIONS = [
-  { id: 'claude-sonnet-5', label: 'Claude Sonnet 5 (default)', adaptive: true },
+  { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5 (default)', adaptive: true },
   { id: 'claude-opus-5-5', label: 'Claude Opus 5.5', adaptive: true },
-  { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5', adaptive: false },
+  { id: 'claude-haiku-5-5', label: 'Claude Haiku 5.5', adaptive: true },
 ] as const;
-export const DEFAULT_MODEL = 'claude-sonnet-5';
+export const DEFAULT_MODEL = 'claude-sonnet-5-5';
 
 /** Whether a model id gets adaptive thinking and effort. Unknown ids get neither (safe: no 400). */
 export function supportsAdaptive(model: string): boolean {

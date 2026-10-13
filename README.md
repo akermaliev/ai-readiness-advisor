@@ -151,8 +151,8 @@ The score is never computed by the model, and raw answer points are not sent.
 **How it is called:**
 - The reply is constrained to a JSON Schema at the API (`output_config.format`), with up to
   16,000 output tokens.
-- Sonnet 5 and Opus 5.5 also get adaptive thinking at medium effort. Haiku 4.5 gets neither,
-  because adaptive thinking returns an error there
+- The model picker offers Claude Sonnet 5.5 (default), Opus 5.5 and Haiku 5.5. All three get
+  adaptive thinking at medium effort
   ([structured outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs),
   [adaptive thinking](https://platform.claude.com/docs/en/build-with-claude/adaptive-thinking),
   [effort](https://platform.claude.com/docs/en/build-with-claude/effort)).
