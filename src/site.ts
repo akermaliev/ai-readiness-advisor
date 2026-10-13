@@ -6,22 +6,19 @@
 /** Keep in step with package.json (asserted by a unit test). */
 export const APP_VERSION = '1.3.0';
 
-/** Public source repository. Null while the repo is private; the footer then omits the link. */
-export const REPO_URL: string | null = null;
+/** Public source repository, linked from the footer. */
+export const REPO_URL = 'https://github.com/akermaliev/ai-readiness-advisor';
 
-/**
- * Contact address for the Terms and Privacy views. Null until chosen; the views then say it
- * will be added before launch. Not the author's personal address unless he decides so.
- */
-export const CONTACT_EMAIL: string | null = null;
+/** The live site (GitHub Pages). */
+export const SITE_URL = 'https://akermaliev.github.io/ai-readiness-advisor/';
 
-/**
- * False until the Terms and Privacy text has been reviewed by someone qualified. While false,
- * both views carry a visible "draft" notice, so an unreviewed draft cannot ship silently.
- */
-export const LEGAL_TEXT_REVIEWED = false;
+/** Where questions go from the Terms and Privacy views: the repo's issue tracker, no personal email. */
+export const CONTACT_URL = `${REPO_URL}/issues`;
 
-export const LEGAL_LAST_UPDATED = '2026-09-30';
+/** Who wrote the Terms and Privacy text, stated on both views. */
+export const LEGAL_AUTHOR = 'Aitemir Kermaliev';
+
+export const LEGAL_LAST_UPDATED = '2026-10-12';
 
 /** The one statistic the landing page cites, with its limits (Part D rules apply). */
 export const WHY_SOURCE = {

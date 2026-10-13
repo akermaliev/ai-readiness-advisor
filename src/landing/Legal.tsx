@@ -1,24 +1,16 @@
 import type { ReactNode } from 'react';
-import { CONTACT_EMAIL, LEGAL_LAST_UPDATED, LEGAL_TEXT_REVIEWED } from '../site';
+import { CONTACT_URL, LEGAL_AUTHOR, LEGAL_LAST_UPDATED } from '../site';
 
 /**
- * v1.2 C1 — Terms and Privacy as in-app views at #terms and #privacy.
- *
- * DRAFT TEXT. Written from the build prompt's outline; it has not been reviewed by anyone
- * qualified and is not presented as legally sufficient. While LEGAL_TEXT_REVIEWED is false,
- * both views say so on the page.
+ * v1.2 C1 — Terms and Privacy as in-app views at #terms and #privacy. Written by the tool's
+ * author, who is named on both views (v1.3).
  */
 function LegalPage({ title, children }: { title: string; children: ReactNode }) {
   return (
     <article className="rounded-xl border border-line bg-panel p-5 sm:p-7" data-testid={`legal-${title.toLowerCase()}`}>
       <a href="#" className="text-sm text-accent underline underline-offset-2" data-testid="legal-back">&larr; Back</a>
       <h1 className="mt-3 text-2xl font-semibold text-ink">{title}</h1>
-      <p className="mt-1 text-xs text-ink-3">Last updated {LEGAL_LAST_UPDATED}</p>
-      {!LEGAL_TEXT_REVIEWED && (
-        <p className="mt-4 rounded-lg border border-line bg-surface px-4 py-3 text-sm text-ink" data-testid="legal-draft">
-          Draft. This text has not yet been reviewed by a qualified professional.
-        </p>
-      )}
+      <p className="mt-1 text-xs text-ink-3" data-testid="legal-author">Written by {LEGAL_AUTHOR}, the author of this tool. Last updated {LEGAL_LAST_UPDATED}.</p>
       <div className="mt-5 space-y-5 text-sm leading-relaxed text-ink-2 [&_h2]:text-base [&_h2]:font-semibold [&_h2]:text-ink [&_h2]:mb-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:space-y-1">
         {children}
       </div>
@@ -26,9 +18,9 @@ function LegalPage({ title, children }: { title: string; children: ReactNode }) 
   );
 }
 
-const contact = CONTACT_EMAIL === null
-  ? <>A contact address will be added before launch.</>
-  : <>Questions: <a className="text-accent underline" href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.</>;
+const contact = (
+  <>Questions or concerns: open an issue on <a className="text-accent underline" href={CONTACT_URL} target="_blank" rel="noopener noreferrer">GitHub</a>.</>
+);
 
 export function TermsView() {
   return (

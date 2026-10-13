@@ -26,6 +26,8 @@ jobs:
       - run: npm ci
       - run: npm test          # the invariants, engine, calibration and Stage 5 suites gate the deploy
       - run: npm run build     # typecheck (both configs) + vite build
+        env:
+          SITE_URL: https://akermaliev.github.io/ai-readiness-advisor   # absolute link-preview image
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

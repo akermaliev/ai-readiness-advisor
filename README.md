@@ -32,7 +32,7 @@ downloads as a PDF.
 gates are computed in the browser from the answers alone, and the full report renders with the
 network disconnected. That is tested, not asserted (`e2e/offline_report.py`).
 
-**Live site:** not deployed yet.
+**Live site:** [akermaliev.github.io/ai-readiness-advisor](https://akermaliev.github.io/ai-readiness-advisor/)
 
 ## Why it exists
 
@@ -232,6 +232,12 @@ Three authored personas land in their target ranges at the 50-250 anchor: weak *
 sensibly, not that they are right. Moving any single answer one option level changes their
 headline by at most 4 points.
 
+The recommendation layer is tested against mocked API replies (57 browser checks: valid,
+malformed, gate-violating, cut-off and failed calls). Real calls to the API succeeded on v1.1
+and v1.2; the v1.3 reply format (roadmap fields) has so far been exercised only against mocks.
+If a live reply does not fit the format, the app retries once and then shows the pre-written
+examples, so a failure degrades rather than breaks.
+
 Evidence that would count:
 - organizations with known outcomes scoring in the expected order
 - two respondents at one company agreeing
@@ -322,19 +328,22 @@ Browser tests (Python Playwright; `site.py` also needs `pypdf` and Node 22.6 or 
 ```bash
 npm run build && python -m http.server 8765 --directory dist
 python e2e/offline_report.py         http://localhost:8765/index.html e2e/screenshots   # 68 checks
-python e2e/stage5_recommendations.py http://localhost:8765/index.html e2e/screenshots   # 51 checks
-python e2e/site.py dist e2e/screenshots                                                 # 47 checks, served with the production security headers
+python e2e/stage5_recommendations.py http://localhost:8765/index.html e2e/screenshots   # 57 checks
+python e2e/site.py dist e2e/screenshots                                                 # 54 checks, served with the production security headers
 ```
 
-**Deploy.** The site is static: `npm run build`, then publish `dist/`. The host is not chosen yet.
+**Deploy.** The site is static: `npm run build`, then publish `dist/`. It is hosted on GitHub
+Pages: `.github/workflows/deploy.yml` runs the unit tests and the build on every push to `main`,
+then publishes `dist/`.
 
-- **Security headers:** set the ones in `security-policy.ts` on the host (`_headers` for
-  Cloudflare Pages or Netlify, `vercel.json` for Vercel). The production build also carries the
-  CSP as a `<meta>` tag.
-- **Link previews:** set `SITE_URL` when building for a domain, so the preview card gets an
-  absolute URL.
-- **The existing workflow:** `.github/workflows/deploy.yml` targets GitHub Pages. GitHub Pages
-  cannot set security headers, and on a free plan it does not serve private repositories.
+- **Security headers:** GitHub Pages cannot set custom headers, so the production build carries
+  the Content Security Policy as a `<meta>` tag (script, style and connection sources limited to
+  the site itself and `api.anthropic.com`). What a meta tag cannot do: `frame-ancestors`
+  (clickjacking protection), `X-Content-Type-Options` and `Permissions-Policy`. A host that sets
+  headers can use the values in `security-policy.ts` (`_headers` for Cloudflare Pages or Netlify,
+  `vercel.json` for Vercel).
+- **Link previews:** the workflow builds with `SITE_URL` set, so the preview card gets an
+  absolute image URL.
 
 **Project structure:**
 
@@ -354,4 +363,4 @@ e2e/             browser tests
 
 ## License
 
-None yet. While the repository is private, all rights are reserved.
+[MIT](LICENSE). The Terms and Privacy text shown in the app was written by the author.

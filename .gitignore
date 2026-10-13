@@ -8,3 +8,6 @@ coverage/
 .DS_Store
 Thumbs.db
 e2e/screenshots/
+
+# Personal files, never part of the repo
+Claude outputs/

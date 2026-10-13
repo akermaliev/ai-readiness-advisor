@@ -4,7 +4,7 @@ import { computeReadiness } from '../../engine';
 import { viewFromHash } from '../../landing/useHashView';
 import { buildFallbackRecommendations } from '../../model/fallback';
 import { buildRoadmapView } from '../../model/roadmapView';
-import { APP_VERSION, LEGAL_TEXT_REVIEWED } from '../../site';
+import { APP_VERSION, CONTACT_URL, REPO_URL } from '../../site';
 import { headerCsp, metaCsp, SECURITY_HEADERS } from '../../../security-policy';
 import { buildReportPdf, pdfFileName, pdfText } from '../reportPdf';
 import packageJson from '../../../package.json?raw';
@@ -52,8 +52,9 @@ describe('v1.2 C1/C3 — site', () => {
     const pkg = JSON.parse(packageJson) as { version: string };
     expect(APP_VERSION).toBe(pkg.version);
   });
-  it('legal text is flagged as unreviewed until someone qualified signs it off', () => {
-    expect(LEGAL_TEXT_REVIEWED).toBe(false); // flip deliberately, with the review, and update this test
+  it('contact goes to the public repo\'s issue tracker, not a personal address', () => {
+    expect(REPO_URL).toBe('https://github.com/akermaliev/ai-readiness-advisor');
+    expect(CONTACT_URL).toBe(`${REPO_URL}/issues`);
   });
   it('CSP: only self and api.anthropic.com; frame-ancestors only in the header form', () => {
     expect(headerCsp()).toContain("connect-src 'self' https://api.anthropic.com");
