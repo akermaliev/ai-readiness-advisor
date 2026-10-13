@@ -131,6 +131,16 @@ describe('v1.3 — roadmap view', () => {
   });
 });
 
+describe('v1.3 — deferral wording (first live run, 2026-10-12)', () => {
+  it('lowers a capitalised first word after "until", but keeps acronyms and ids', async () => {
+    const { untilText } = await import('../display');
+    expect(untilText('An agreed single source of truth exists.')).toBe('an agreed single source of truth exists');
+    expect(untilText('The AI-assisted forecast drafting use case is running')).toBe('the AI-assisted forecast drafting use case is running');
+    expect(untilText('SKU and sales data are consolidated')).toBe('SKU and sales data are consolidated');
+    expect(untilText('D1 Data maturity & accessibility improves')).toBe('D1 Data maturity & accessibility improves');
+  });
+});
+
 describe('v1.3 — PDF text', () => {
   it('flags a company name the built-in font cannot draw', () => {
     expect(hasUnprintable('Кыргыз Телеком')).toBe(true);
